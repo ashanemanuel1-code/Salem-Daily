@@ -8,7 +8,8 @@ const save = (name: string, data: unknown) => { const a = document.createElement
 type Devotion = { id: string; title: string; body: string; categories: string[]; published: boolean; date: string }
 type Cat = { id: string; name: string }
 type Bible = { meta: { id: string; name: string; language: string; license?: string }; books: { name: string; chapters: string[][] }[] }
-type PDay = { book: string; from: number; to: number; title?: string; body?: string }
+type PRead = { book: string; from: number; to: number; vFrom?: number; vTo?: number }
+type PDay = PRead & { title?: string; body?: string; more?: PRead[] }
 type Plan = { id: string; title: string; days: PDay[] }
 type Entry = { id: string; name: string; language: string; path: string }
 
@@ -78,14 +79,17 @@ function Plans({ settings }: { settings: any }) {
   useEffect(() => { get<Plan[]>('plans/plans.json').then(setPlans).catch(() => {}); get<Entry[]>('bibles/index.json').then(setIdx).catch(() => {}) }, [])
   useEffect(() => { const c = custom.find(b => b.meta.id === settings.translation); if (c) { setBible(c); return } const e = idx.find(x => x.id === settings.translation) || idx[0]; if (e) get<Bible>('bibles/' + e.path).then(setBible).catch(() => setBible(null)) }, [idx, custom, settings.translation])
   const plan = plans.find(p => p.id === sel); const dn = plan ? done[plan.id] || [] : []
-  const reading = (r: PDay) => { const bk = bible?.books.find(b => b.name.toLowerCase() === r.book.toLowerCase()); if (!bk) return <p className="text-sm">"{r.book}" is not in the selected Bible yet.</p>
-    return <>{Array.from({ length: r.to - r.from + 1 }, (_, k) => r.from + k).map(c => <div key={c}><h4 className="font-semibold">{r.book} {c}</h4>{(bk.chapters[c - 1] || []).map((t, v) => <p key={v}><sup>{v + 1}</sup> {t}</p>)}</div>)}</> }
+  const refOf = (r: PRead) => `${r.book} ${r.from}${r.vFrom ? ':' + r.vFrom + (r.vTo && r.vTo > r.vFrom ? '–' + r.vTo : '') : r.to > r.from ? '–' + r.to : ''}`
+  const reads = (r: PDay): PRead[] => [r as PRead, ...(r.more || [])].filter(x => x.book)
+  const reading = (r: PRead) => { const bk = bible?.books.find(b => b.name.toLowerCase() === r.book.toLowerCase()); if (!bk) return <p className="text-sm">"{r.book}" is not in the selected Bible yet.</p>
+    if (r.vFrom) return <div><h4 className="font-semibold">{refOf(r)}</h4>{(bk.chapters[r.from - 1] || []).slice(r.vFrom - 1, r.vTo || r.vFrom).map((t, v) => <p key={v}><sup>{r.vFrom! + v}</sup> {t}</p>)}</div>
+    return <>{Array.from({ length: Math.max(r.to, r.from) - r.from + 1 }, (_, k) => r.from + k).map(c => <div key={c}><h4 className="font-semibold">{r.book} {c}</h4>{(bk.chapters[c - 1] || []).map((t, v) => <p key={v}><sup>{v + 1}</sup> {t}</p>)}</div>)}</> }
   if (!plan) return <div className="space-y-3"><h2 className="font-bold">Reading plans</h2>{!plans.length && <p>No plans yet.</p>}{plans.map(p => <button key={p.id} className={card + ' block w-full text-left'} onClick={() => { setSel(p.id); setOpen(null) }}>{p.title}<span className="block text-xs opacity-70">{p.days.length} days · {(done[p.id] || []).length} done</span></button>)}</div>
   const next = plan.days.findIndex((_, i) => !dn.includes(i))
   return <div className="space-y-3"><button className="text-sm underline" onClick={() => setSel('')}>← All plans</button><h2 className="font-bold">{plan.title}</h2><p className="text-sm">{dn.length} of {plan.days.length} days done</p>
     {plan.days.map((r, i) => <div key={i} className={card}><div className="flex items-center gap-2"><input type="checkbox" checked={dn.includes(i)} onChange={e => setDone({ ...done, [plan.id]: e.target.checked ? [...dn, i] : dn.filter(x => x !== i) })} />
-      <button className="flex-1 text-left" onClick={() => setOpen(open === i ? null : i)}>Day {i + 1}: {r.title || `${r.book} ${r.from}${r.to > r.from ? '–' + r.to : ''}`}{r.title && r.book ? ` · ${r.book} ${r.from}${r.to > r.from ? '–' + r.to : ''}` : ''}{i === next ? ' ← next' : ''}</button></div>
-      {open === i && <div style={{ fontSize: settings.font }} className="mt-2 space-y-2">{r.body && <p className="whitespace-pre-wrap">{r.body}</p>}{r.book && reading(r)}</div>}</div>)}</div>
+      <button className="flex-1 text-left" onClick={() => setOpen(open === i ? null : i)}>Day {i + 1}: {r.title || reads(r).map(refOf).join(', ')}{r.title && reads(r).length ? ' · ' + reads(r).map(refOf).join(', ') : ''}{i === next ? ' ← next' : ''}</button></div>
+      {open === i && <div style={{ fontSize: settings.font }} className="mt-2 space-y-2">{r.body && <div><h3 className="font-bold sd-gold">Devotion</h3><p className="whitespace-pre-wrap">{r.body}</p></div>}{reads(r).length > 0 && <div className="space-y-2"><h3 className="font-bold sd-gold">Today's reading</h3>{reads(r).map((x, k) => <div key={k}>{reading(x)}</div>)}</div>}</div>}</div>)}</div>
 }
 
 function PlanAdmin() {
@@ -94,6 +98,9 @@ function PlanAdmin() {
   if (!plans) return null
   const upPlan = (id: string, q: Partial<Plan>) => setPlans(plans.map(x => x.id === id ? { ...x, ...q } : x))
   const upDay = (id: string, i: number, q: Partial<PDay>) => setPlans(plans.map(x => x.id === id ? { ...x, days: x.days.map((d, k) => k === i ? { ...d, ...q } : d) } : x))
+  const upRead = (id: string, i: number, k: number, q: Partial<PRead>) => k === 0 ? upDay(id, i, q) : setPlans(plans.map(x => x.id === id ? { ...x, days: x.days.map((d, j) => j === i ? { ...d, more: (d.more || []).map((m2, n) => n === k - 1 ? { ...m2, ...q } : m2) } : d) } : x))
+  const addRead = (id: string, i: number) => setPlans(plans.map(x => x.id === id ? { ...x, days: x.days.map((d, j) => j === i ? { ...d, more: [...(d.more || []), { book: '', from: 1, to: 1 }] } : d) } : x))
+  const delRead = (id: string, i: number, k: number) => setPlans(plans.map(x => x.id === id ? { ...x, days: x.days.map((d, j) => j === i ? { ...d, more: (d.more || []).filter((_, n) => n !== k - 1) } : d) } : x))
   const createSeries = () => { if (days < 1) return; const id = 'p' + Date.now(); setPlans([...plans, { id, title, days: Array.from({ length: days }, (_, i) => ({ book: '', from: 1, to: 1, title: 'Day ' + (i + 1), body: '' })) }]); setOpenId(id); setM(`Made a ${days}-day devotional series. Fill in each day below.`) }
   const create = () => { const n = Math.min(days, ch); if (n < 1) return setM('Days and chapters must be at least 1')
     const list: PDay[] = Array.from({ length: n }, (_, i) => ({ book, from: Math.floor(i * ch / n) + 1, to: Math.floor((i + 1) * ch / n) }))
@@ -107,7 +114,8 @@ function PlanAdmin() {
       {openId === p.id && p.days.map((d, i) => <div key={i} className="space-y-1 border-t pt-2"><b>Day {i + 1}</b>
         <input className="w-full border rounded px-2" placeholder="Devotion title" value={d.title || ''} onChange={e => upDay(p.id, i, { title: e.target.value })} />
         <textarea className="w-full border rounded px-2" rows={3} placeholder="Devotion text (leave empty for reading only)" value={d.body || ''} onChange={e => upDay(p.id, i, { body: e.target.value })} />
-        <div className="flex flex-wrap items-center gap-2"><input className="border rounded px-2 w-32" placeholder="Book, e.g. John" value={d.book} onChange={e => upDay(p.id, i, { book: e.target.value })} />chapters <input type="number" min={1} className="border rounded px-2 w-16" value={d.from} onChange={e => upDay(p.id, i, { from: +e.target.value })} /> to <input type="number" min={1} className="border rounded px-2 w-16" value={d.to} onChange={e => upDay(p.id, i, { to: +e.target.value })} /></div></div>)}</div>)}
+        {[d as PRead, ...(d.more || [])].map((x, k) => <div key={k} className="flex flex-wrap items-center gap-1"><input className="border rounded px-2 w-28" placeholder="Book" value={x.book} onChange={e => upRead(p.id, i, k, { book: e.target.value })} />ch <input type="number" min={1} className="border rounded px-1 w-14" value={x.from} onChange={e => upRead(p.id, i, k, { from: +e.target.value, to: Math.max(+e.target.value, x.to) })} />–<input type="number" min={1} className="border rounded px-1 w-14" value={x.to} onChange={e => upRead(p.id, i, k, { to: +e.target.value })} /> verses <input type="number" min={1} className="border rounded px-1 w-14" placeholder="from" value={x.vFrom || ''} onChange={e => upRead(p.id, i, k, { vFrom: +e.target.value || undefined })} />–<input type="number" min={1} className="border rounded px-1 w-14" placeholder="to" value={x.vTo || ''} onChange={e => upRead(p.id, i, k, { vTo: +e.target.value || undefined })} />{k > 0 && <button onClick={() => delRead(p.id, i, k)}>✕</button>}</div>)}
+        <button className="underline" onClick={() => addRead(p.id, i)}>+ Add another reading</button></div>)}</div>)}
     <button className={btn} onClick={() => save('plans.json', plans)}>Export plans.json</button></section>
 }
 
