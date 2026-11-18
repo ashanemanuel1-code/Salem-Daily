@@ -1,16 +1,5 @@
 [
   {
-    "id": "sample",
-    "title": "Sample: Psalm 23",
-    "days": [
-      {
-        "book": "Psalms",
-        "from": 1,
-        "to": 1
-      }
-    ]
-  },
-  {
     "id": "p1795000167012",
     "title": "Matthew in 30 days",
     "days": [
