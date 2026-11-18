@@ -1,1 +1,9 @@
 @tailwind base;@tailwind components;@tailwind utilities;
+:root{--gold:#d4a017;--bg:#0b0b0f;--ink:#fdf3d0;color-scheme:dark}
+body{background:radial-gradient(circle at top,#2a1f05 0,var(--bg) 55%) fixed;color:var(--ink)}
+.sd-gold{color:var(--gold)}
+.sd-card{border:1px solid color-mix(in srgb,var(--gold) 45%,transparent);background:rgba(255,255,255,.05);border-radius:14px;padding:1rem;box-shadow:0 0 18px rgba(212,160,23,.1)}
+.sd-btn{background:linear-gradient(135deg,#f5d36a,var(--gold));color:#1a1200;border-radius:10px;padding:.4rem .8rem;font-size:.875rem;font-weight:600}
+.sd-btn:disabled{opacity:.4}
+input:not([type=checkbox]):not([type=range]):not([type=file]),textarea,select{background:#1a1a1f!important;color:var(--ink)!important;border:1px solid color-mix(in srgb,var(--gold) 40%,transparent)!important}
+nav a{padding:.15rem .3rem;border-radius:8px}nav a.font-bold{color:var(--gold)}

@@ -42,8 +42,8 @@ const parseUsfx = (xml: string): { books: Bible['books'] } | string => {
 }
 
 const useHash = () => { const [h, s] = useState(location.hash.slice(2) || ''); useEffect(() => { const f = () => s(location.hash.slice(2)); addEventListener('hashchange', f); return () => removeEventListener('hashchange', f) }, []); return h }
-const card = 'rounded-xl border border-slate-200 dark:border-slate-700 p-4 bg-white dark:bg-slate-800'
-const btn = 'rounded-lg bg-violet-600 text-white px-3 py-1.5 text-sm'
+const card = 'sd-card'
+const btn = 'sd-btn'
 
 function Bible({ settings }: { settings: any }) {
   const [idx, setIdx] = useState<Entry[]>([]); const [tid, setTid] = useState(settings.translation); const [bible, setBible] = useState<Bible | null>(null)
@@ -148,16 +148,17 @@ function Admin() {
 
 export default function App() {
   const route = useHash(); const [name, setName] = useLS('name', ''); const [settings, setSettings] = useLS('settings', { translation: 'sample', font: 18, dark: false })
-  const [verse, setVerse] = useState<{ ref: string; text: string } | null>(null)
+  const [verse, setVerse] = useState<{ ref: string; text: string } | null>(null); const [theme, setTheme] = useState<any>({})
+  useEffect(() => { get<any>('theme.json').then(t => { setTheme(t); const r = document.documentElement.style; if (t.gold) r.setProperty('--gold', t.gold); if (t.bg) r.setProperty('--bg', t.bg) }).catch(() => {}) }, [])
   useEffect(() => { get<any>('daily-verse.json').then(setVerse).catch(() => {}) }, [])
   useEffect(() => { document.documentElement.classList.toggle('dark', settings.dark) }, [settings.dark])
   if (!name) return <Welcome onDone={setName} />
   const tab = route.split('/')[0]
   const restore = async (f: File) => { try { const j = JSON.parse(await f.text()); Object.entries(j).forEach(([k, v]) => localStorage.setItem(k, v as string)); location.reload() } catch { alert('Invalid backup') } }
-  return <div className="min-h-screen bg-slate-50 dark:bg-slate-900 dark:text-slate-100"><div className="max-w-2xl mx-auto p-4 space-y-4">
-    <header className="flex justify-between items-center"><h1 className="text-xl font-bold text-violet-600">Salem Daily</h1>
+  return <div className="min-h-screen"><div className="max-w-2xl mx-auto p-4 space-y-4">
+    <header className="flex justify-between items-center"><h1 className="text-xl font-bold sd-gold flex items-center gap-2"><img src={B + 'icons/icon.png'} alt="" className="w-9 h-9 rounded-xl" />{theme.appName || 'Salem Daily'}</h1>
       <nav className="flex gap-3 text-sm">{[['', 'Home'], ['bible', 'Bible'], ['devotions', 'Devotions'], ['plans', 'Plans'], ['settings', 'Settings']].map(([r, l]) => <a key={r} href={'#/' + r} className={tab === r ? 'font-bold underline' : ''}>{l}</a>)}</nav></header>
-    {tab === '' && <div className="space-y-3"><h2 className="text-lg">Hello, {name}</h2>{verse && <blockquote className={card}>{verse.text}<footer className="text-sm opacity-70">— {verse.ref}</footer></blockquote>}</div>}
+    {tab === '' && <div className="space-y-3">{theme.hero && <img src={B + theme.hero} alt="" className="w-full rounded-2xl max-h-64 object-cover" onError={e => (e.currentTarget.style.display = 'none')} />}<h2 className="text-lg">Hello, {name}</h2>{theme.tagline && <p className="text-sm opacity-70">{theme.tagline}</p>}{verse && <blockquote className={card}>{verse.text}<footer className="text-sm opacity-70">— {verse.ref}</footer></blockquote>}</div>}
     {tab === 'bible' && <Bible settings={settings} />}
     {tab === 'devotions' && <Devotions />}
     {tab === 'plans' && <Plans settings={settings} />}
@@ -173,6 +174,6 @@ export default function App() {
 
 function Welcome({ onDone }: { onDone: (n: string) => void }) {
   const [n, setN] = useState('')
-  return <div className="min-h-screen grid place-items-center p-6"><div className="max-w-sm w-full space-y-3 text-center"><h1 className="text-3xl font-bold text-violet-600">Salem Daily</h1><p>What should we call you? Your name stays on this device.</p>
+  return <div className="min-h-screen grid place-items-center p-6"><div className="max-w-sm w-full space-y-3 text-center"><img src={B + 'icons/icon.png'} alt="" className="w-28 h-28 mx-auto rounded-3xl" /><h1 className="text-3xl font-bold sd-gold">Salem Daily</h1><p>What should we call you? Your name stays on this device.</p>
     <input className="border rounded px-3 py-2 w-full" value={n} onChange={e => setN(e.target.value)} placeholder="Your name" /><button className={btn} disabled={!n.trim()} onClick={() => onDone(n.trim())}>Continue</button></div></div>
 }
