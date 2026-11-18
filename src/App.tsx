@@ -8,6 +8,8 @@ const save = (name: string, data: unknown) => { const a = document.createElement
 type Devotion = { id: string; title: string; body: string; categories: string[]; published: boolean; date: string }
 type Cat = { id: string; name: string }
 type Bible = { meta: { id: string; name: string; language: string; license?: string }; books: { name: string; chapters: string[][] }[] }
+type PDay = { book: string; from: number; to: number }
+type Plan = { id: string; title: string; days: PDay[] }
 type Entry = { id: string; name: string; language: string; path: string }
 
 export const validateBible = (j: any): string | null => {
@@ -47,6 +49,39 @@ function Bible({ settings }: { settings: any }) {
       <button className="ml-2 text-xs" onClick={() => { const n = prompt('Note', m.note || ''); if (n !== null) set(v, { note: n }) }}>✎</button>{m.note && <em className="block text-xs opacity-70">{m.note}</em>}</p> })}</div></div>
 }
 
+function Plans({ settings }: { settings: any }) {
+  const [plans, setPlans] = useState<Plan[]>([]); const [sel, setSel] = useState(''); const [open, setOpen] = useState<number | null>(null)
+  const [done, setDone] = useLS<Record<string, number[]>>('planDone', {})
+  const [idx, setIdx] = useState<Entry[]>([]); const [bible, setBible] = useState<Bible | null>(null); const [custom] = useLS<Bible[]>('customBibles', [])
+  useEffect(() => { get<Plan[]>('plans/plans.json').then(setPlans).catch(() => {}); get<Entry[]>('bibles/index.json').then(setIdx).catch(() => {}) }, [])
+  useEffect(() => { const c = custom.find(b => b.meta.id === settings.translation); if (c) { setBible(c); return } const e = idx.find(x => x.id === settings.translation) || idx[0]; if (e) get<Bible>('bibles/' + e.path).then(setBible).catch(() => setBible(null)) }, [idx, custom, settings.translation])
+  const plan = plans.find(p => p.id === sel); const dn = plan ? done[plan.id] || [] : []
+  const reading = (r: PDay) => { const bk = bible?.books.find(b => b.name.toLowerCase() === r.book.toLowerCase()); if (!bk) return <p className="text-sm">"{r.book}" is not in the selected Bible yet.</p>
+    return <>{Array.from({ length: r.to - r.from + 1 }, (_, k) => r.from + k).map(c => <div key={c}><h4 className="font-semibold">{r.book} {c}</h4>{(bk.chapters[c - 1] || []).map((t, v) => <p key={v}><sup>{v + 1}</sup> {t}</p>)}</div>)}</> }
+  if (!plan) return <div className="space-y-3"><h2 className="font-bold">Reading plans</h2>{!plans.length && <p>No plans yet.</p>}{plans.map(p => <button key={p.id} className={card + ' block w-full text-left'} onClick={() => { setSel(p.id); setOpen(null) }}>{p.title}<span className="block text-xs opacity-70">{p.days.length} days · {(done[p.id] || []).length} done</span></button>)}</div>
+  const next = plan.days.findIndex((_, i) => !dn.includes(i))
+  return <div className="space-y-3"><button className="text-sm underline" onClick={() => setSel('')}>← All plans</button><h2 className="font-bold">{plan.title}</h2><p className="text-sm">{dn.length} of {plan.days.length} days done</p>
+    {plan.days.map((r, i) => <div key={i} className={card}><div className="flex items-center gap-2"><input type="checkbox" checked={dn.includes(i)} onChange={e => setDone({ ...done, [plan.id]: e.target.checked ? [...dn, i] : dn.filter(x => x !== i) })} />
+      <button className="flex-1 text-left" onClick={() => setOpen(open === i ? null : i)}>Day {i + 1}: {r.book} {r.from}{r.to > r.from ? '–' + r.to : ''}{i === next ? ' ← next' : ''}</button></div>
+      {open === i && <div style={{ fontSize: settings.font }} className="mt-2 space-y-2">{reading(r)}</div>}</div>)}</div>
+}
+
+function PlanAdmin() {
+  const [plans, setPlans] = useLS<Plan[] | null>('draftPlans', null); const [title, setTitle] = useState('Matthew in 30 days'); const [book, setBook] = useState('Matthew'); const [ch, setCh] = useState(28); const [days, setDays] = useState(30); const [m, setM] = useState('')
+  useEffect(() => { if (!plans) get<Plan[]>('plans/plans.json').then(setPlans).catch(() => setPlans([])) }, [])
+  if (!plans) return null
+  const create = () => { const n = Math.min(days, ch); if (n < 1) return setM('Days and chapters must be at least 1')
+    const list: PDay[] = Array.from({ length: n }, (_, i) => ({ book, from: Math.floor(i * ch / n) + 1, to: Math.floor((i + 1) * ch / n) }))
+    setPlans([...plans, { id: 'p' + Date.now(), title, days: list }]); setM(days > ch ? `Made ${n} days (one chapter minimum per day, so it was limited from ${days}).` : `Made ${n} days.`) }
+  return <section className="space-y-2"><h2 className="font-bold">Reading plans</h2>
+    <div className="flex flex-wrap gap-2 text-sm text-black"><input className="border rounded px-2" value={title} onChange={e => setTitle(e.target.value)} /><input className="border rounded px-2 w-28" value={book} onChange={e => setBook(e.target.value)} />
+      <label className="dark:text-white">Chapters <input type="number" min={1} className="border rounded px-2 w-16 text-black" value={ch} onChange={e => setCh(+e.target.value)} /></label>
+      <label className="dark:text-white">Days <input type="number" min={1} className="border rounded px-2 w-16 text-black" value={days} onChange={e => setDays(+e.target.value)} /></label></div>
+    <button className={btn} onClick={create}>Create plan</button>{m && <p className="text-sm">{m}</p>}
+    {plans.map(p => <div key={p.id} className="text-sm">{p.title} · {p.days.length} days <button onClick={() => confirm('Delete plan?') && setPlans(plans.filter(x => x.id !== p.id))}>🗑</button></div>)}
+    <button className={btn} onClick={() => save('plans.json', plans)}>Export plans.json</button></section>
+}
+
 function Devotions() {
   const [d, setD] = useState<Devotion[]>([]); const [local] = useLS<Devotion[] | null>('draftDevotions', null)
   useEffect(() => { get<Devotion[]>('devotions/devotions.json').then(setD).catch(() => {}) }, [])
@@ -80,7 +115,7 @@ function Admin() {
       <button className={btn} onClick={() => save('categories.json', cats)}>Export categories.json</button></section>
     <section className="space-y-2"><h2 className="font-bold">Import Bible JSON</h2>
       <input type="file" accept=".json" onChange={e => e.target.files?.[0] && importBible(e.target.files[0])} />{msg && <p className="text-sm">{msg}</p>}
-      {cb.map(b => <div key={b.meta.id} className="text-sm">{b.meta.name} · {b.meta.language} · {b.meta.license || 'license not stated'} <button onClick={() => save(b.meta.id + '.json', b)}>Export</button></div>)}</section></div>
+      {cb.map(b => <div key={b.meta.id} className="text-sm">{b.meta.name} · {b.meta.language} · {b.meta.license || 'license not stated'} <button onClick={() => save(b.meta.id + '.json', b)}>Export</button></div>)}</section><PlanAdmin /></div>
 }
 
 export default function App() {
@@ -93,10 +128,11 @@ export default function App() {
   const restore = async (f: File) => { try { const j = JSON.parse(await f.text()); Object.entries(j).forEach(([k, v]) => localStorage.setItem(k, v as string)); location.reload() } catch { alert('Invalid backup') } }
   return <div className="min-h-screen bg-slate-50 dark:bg-slate-900 dark:text-slate-100"><div className="max-w-2xl mx-auto p-4 space-y-4">
     <header className="flex justify-between items-center"><h1 className="text-xl font-bold text-violet-600">Salem Daily</h1>
-      <nav className="flex gap-3 text-sm">{[['', 'Home'], ['bible', 'Bible'], ['devotions', 'Devotions'], ['settings', 'Settings']].map(([r, l]) => <a key={r} href={'#/' + r} className={tab === r ? 'font-bold underline' : ''}>{l}</a>)}</nav></header>
+      <nav className="flex gap-3 text-sm">{[['', 'Home'], ['bible', 'Bible'], ['devotions', 'Devotions'], ['plans', 'Plans'], ['settings', 'Settings']].map(([r, l]) => <a key={r} href={'#/' + r} className={tab === r ? 'font-bold underline' : ''}>{l}</a>)}</nav></header>
     {tab === '' && <div className="space-y-3"><h2 className="text-lg">Hello, {name}</h2>{verse && <blockquote className={card}>{verse.text}<footer className="text-sm opacity-70">— {verse.ref}</footer></blockquote>}</div>}
     {tab === 'bible' && <Bible settings={settings} />}
     {tab === 'devotions' && <Devotions />}
+    {tab === 'plans' && <Plans settings={settings} />}
     {tab === 'admin' && <Admin />}
     {tab === 'settings' && <div className="space-y-3">
       <label className="block">Name <input className="border rounded px-2 text-black" value={name} onChange={e => setName(e.target.value)} /></label>
