@@ -1,1 +1,18 @@
-[{"id":"d1","title":"Welcome to Salem Daily","body":"Replace this sample with your own devotion using the Admin editor at #/admin.","categories":["faith"],"published":true,"date":"2026-11-18"}]
+[
+  {
+    "id": "d1",
+    "title": "Welcome to Salem Daily",
+    "body": "Let the Word of God renew your mind, strengthen your faith, and guide your steps. No matter where life takes you, take a moment to draw closer to Jesus",
+    "categories": [],
+    "published": true,
+    "date": "2026-11-18"
+  },
+  {
+    "id": "d1794995621807",
+    "title": "New devotion",
+    "body": "",
+    "categories": [],
+    "published": false,
+    "date": "2026-11-18"
+  }
+]
