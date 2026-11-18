@@ -36,9 +36,9 @@ const parseUsfx = (xml: string): { books: Bible['books'] } | string => {
       e.childNodes.forEach(c => walk(c))
     }
     be.childNodes.forEach(c => walk(c))
-    if (chs.length) out.push({ name: NAMES[code] || be.querySelector('h')?.textContent?.trim() || code, chapters: chs.map(c => Array.from(c, x => (x || '').replace(/\s+/g, ' ').trim())) })
+    if (chs.length && NAMES[code]) out.push({ name: NAMES[code], chapters: chs.map(c => Array.from(c, x => (x || '').replace(/\s+/g, ' ').trim())) })
   })
-  return out.length ? { books: out } : 'No books found - is this a USFX file?'
+  return out.length ? { books: out } : 'No standard books found - is this a USFX file?'
 }
 
 const useHash = () => { const [h, s] = useState(location.hash.slice(2) || ''); useEffect(() => { const f = () => s(location.hash.slice(2)); addEventListener('hashchange', f); return () => removeEventListener('hashchange', f) }, []); return h }
