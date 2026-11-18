@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 const B = import.meta.env.BASE_URL
 const get = async <T,>(p: string): Promise<T> => { const r = await fetch(B + 'data/' + p); if (!r.ok) throw new Error(p); return r.json() }
 const ls = <T,>(k: string, d: T): T => { try { const v = localStorage.getItem('sd:' + k); return v ? JSON.parse(v) : d } catch { return d } }
-const useLS = <T,>(k: string, d: T) => { const [v, s] = useState<T>(() => ls(k, d)); useEffect(() => { localStorage.setItem('sd:' + k, JSON.stringify(v)) }, [k, v]); return [v, s] as const }
+const useLS = <T,>(k: string, d: T) => { const [v, s] = useState<T>(() => ls(k, d)); useEffect(() => { try { localStorage.setItem('sd:' + k, JSON.stringify(v)) } catch { /* storage full */ } }, [k, v]); return [v, s] as const }
 const save = (name: string, data: unknown) => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })); a.download = name; a.click() }
 
 type Devotion = { id: string; title: string; body: string; categories: string[]; published: boolean; date: string }
@@ -17,6 +17,28 @@ export const validateBible = (j: any): string | null => {
   if (!Array.isArray(j.books) || !j.books.length) return 'books must be a non-empty array'
   for (const b of j.books) if (!b.name || !Array.isArray(b.chapters) || b.chapters.some((c: any) => !Array.isArray(c) || c.some((v: any) => typeof v !== 'string'))) return `invalid book: ${b.name}`
   return null
+}
+
+const NAMES: Record<string, string> = Object.fromEntries('GEN EXO LEV NUM DEU JOS JDG RUT 1SA 2SA 1KI 2KI 1CH 2CH EZR NEH EST JOB PSA PRO ECC SNG ISA JER LAM EZK DAN HOS JOL AMO OBA JON MIC NAM HAB ZEP HAG ZEC MAL MAT MRK LUK JHN ACT ROM 1CO 2CO GAL EPH PHP COL 1TH 2TH 1TI 2TI TIT PHM HEB JAS 1PE 2PE 1JN 2JN 3JN JUD REV'.split(' ').map((c, i) => [c, 'Genesis,Exodus,Leviticus,Numbers,Deuteronomy,Joshua,Judges,Ruth,1 Samuel,2 Samuel,1 Kings,2 Kings,1 Chronicles,2 Chronicles,Ezra,Nehemiah,Esther,Job,Psalms,Proverbs,Ecclesiastes,Song of Solomon,Isaiah,Jeremiah,Lamentations,Ezekiel,Daniel,Hosea,Joel,Amos,Obadiah,Jonah,Micah,Nahum,Habakkuk,Zephaniah,Haggai,Zechariah,Malachi,Matthew,Mark,Luke,John,Acts,Romans,1 Corinthians,2 Corinthians,Galatians,Ephesians,Philippians,Colossians,1 Thessalonians,2 Thessalonians,1 Timothy,2 Timothy,Titus,Philemon,Hebrews,James,1 Peter,2 Peter,1 John,2 John,3 John,Jude,Revelation'.split(',')[i]]))
+const parseUsfx = (xml: string): { books: Bible['books'] } | string => {
+  const doc = new DOMParser().parseFromString(xml, 'text/xml'); if (doc.querySelector('parsererror')) return 'This is not valid XML'
+  const out: Bible['books'] = []
+  doc.querySelectorAll('book').forEach(be => {
+    const code = be.getAttribute('id') || ''; const chs: string[][] = []; let ch = 0, v = 0
+    const walk = (n: Node) => {
+      if (n.nodeType === 3) { if (ch > 0 && v > 0) chs[ch - 1][v - 1] = (chs[ch - 1][v - 1] || '') + (n.nodeValue || ''); return }
+      if (n.nodeType !== 1) return
+      const e = n as Element; const t = e.tagName
+      if (t === 'f' || t === 'x' || t === 'fig' || t === 'rq') return
+      if (t === 'c') { ch = parseInt(e.getAttribute('id') || '0'); v = 0; while (chs.length < ch) chs.push([]); return }
+      if (t === 'v') { v = parseInt(e.getAttribute('id') || '0'); return }
+      if (t === 've') { v = 0; return }
+      e.childNodes.forEach(c => walk(c))
+    }
+    be.childNodes.forEach(c => walk(c))
+    if (chs.length) out.push({ name: NAMES[code] || be.querySelector('h')?.textContent?.trim() || code, chapters: chs.map(c => Array.from(c, x => (x || '').replace(/\s+/g, ' ').trim())) })
+  })
+  return out.length ? { books: out } : 'No books found - is this a USFX file?'
 }
 
 const useHash = () => { const [h, s] = useState(location.hash.slice(2) || ''); useEffect(() => { const f = () => s(location.hash.slice(2)); addEventListener('hashchange', f); return () => removeEventListener('hashchange', f) }, []); return h }
@@ -96,6 +118,11 @@ function Admin() {
   const up = (i: number, p: Partial<Devotion>) => setD(d.map((x, k) => k === i ? { ...x, ...p } : x))
   const [msg2, setMsg2] = useState('')
   const importDev = async (f: File) => { try { const j = JSON.parse(await f.text()); if (!Array.isArray(j) || j.some((x: any) => !x.id || !x.title || typeof x.body !== 'string')) return setMsg2('Invalid file: it must be a list where every devotion has id, title and body'); setD(j.map((x: any) => ({ categories: [], published: false, date: new Date().toISOString().slice(0, 10), ...x }))); setMsg2(`Loaded ${j.length} devotions. Edit them below, then click Export devotions.json.`) } catch { setMsg2('This is not a valid JSON file') } }
+  const importUsfx = async (f: File) => { const r = parseUsfx(await f.text()); if (typeof r === 'string') return setMsg(r)
+    const id = prompt('Short id (letters and numbers, e.g. web)', 'web'); const name = prompt('Translation name', 'World English Bible'); const language = prompt('Language', 'English'); const license = prompt('License', 'Public domain')
+    if (!id || !name || !language) return setMsg('Cancelled')
+    const j: Bible = { meta: { id, name, language, license: license || '' }, books: r.books }; const e = validateBible(j); if (e) return setMsg('Invalid: ' + e)
+    save(id + '.json', j); setMsg(`Converted ${name}: ${j.books.length} books, ${j.books.reduce((a, b) => a + b.chapters.length, 0)} chapters. The file ${id}.json was downloaded - upload it to public/data/bibles on GitHub.`) }
   const importBible = async (f: File) => { try { const j = JSON.parse(await f.text()); const e = validateBible(j); if (e) return setMsg('Invalid: ' + e); setCb([...cb.filter(b => b.meta.id !== j.meta.id), j]); setMsg(`Imported ${j.meta.name} (${j.meta.language}, ${j.books.length} books). Use Export to place it in public/data/bibles/.`) } catch { setMsg('Not valid JSON') } }
   return <div className="space-y-4">
     <p className="text-xs">Local content tool only — not secure authentication. Drafts live in this browser. Export, then upload the files to GitHub (see README).</p>
@@ -114,7 +141,8 @@ function Admin() {
       <button className={btn} onClick={() => setCats([...cats, { id: 'c' + Date.now(), name: 'New category' }])}>+ Category</button>
       <button className={btn} onClick={() => save('categories.json', cats)}>Export categories.json</button></section>
     <section className="space-y-2"><h2 className="font-bold">Import Bible JSON</h2>
-      <input type="file" accept=".json" onChange={e => e.target.files?.[0] && importBible(e.target.files[0])} />{msg && <p className="text-sm">{msg}</p>}
+      <input type="file" accept=".json" onChange={e => e.target.files?.[0] && importBible(e.target.files[0])} />
+      <label className="block text-sm">Convert a USFX/XML Bible (downloads a ready JSON file) <input type="file" accept=".xml" onChange={e => e.target.files?.[0] && importUsfx(e.target.files[0])} /></label>{msg && <p className="text-sm">{msg}</p>}
       {cb.map(b => <div key={b.meta.id} className="text-sm">{b.meta.name} · {b.meta.language} · {b.meta.license || 'license not stated'} <button onClick={() => save(b.meta.id + '.json', b)}>Export</button></div>)}</section><PlanAdmin /></div>
 }
 
