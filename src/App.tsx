@@ -8,7 +8,7 @@ const save = (name: string, data: unknown) => { const a = document.createElement
 type Devotion = { id: string; title: string; body: string; categories: string[]; published: boolean; date: string }
 type Cat = { id: string; name: string }
 type Bible = { meta: { id: string; name: string; language: string; license?: string }; books: { name: string; chapters: string[][] }[] }
-type PDay = { book: string; from: number; to: number }
+type PDay = { book: string; from: number; to: number; title?: string; body?: string }
 type Plan = { id: string; title: string; days: PDay[] }
 type Entry = { id: string; name: string; language: string; path: string }
 
@@ -84,14 +84,17 @@ function Plans({ settings }: { settings: any }) {
   const next = plan.days.findIndex((_, i) => !dn.includes(i))
   return <div className="space-y-3"><button className="text-sm underline" onClick={() => setSel('')}>← All plans</button><h2 className="font-bold">{plan.title}</h2><p className="text-sm">{dn.length} of {plan.days.length} days done</p>
     {plan.days.map((r, i) => <div key={i} className={card}><div className="flex items-center gap-2"><input type="checkbox" checked={dn.includes(i)} onChange={e => setDone({ ...done, [plan.id]: e.target.checked ? [...dn, i] : dn.filter(x => x !== i) })} />
-      <button className="flex-1 text-left" onClick={() => setOpen(open === i ? null : i)}>Day {i + 1}: {r.book} {r.from}{r.to > r.from ? '–' + r.to : ''}{i === next ? ' ← next' : ''}</button></div>
-      {open === i && <div style={{ fontSize: settings.font }} className="mt-2 space-y-2">{reading(r)}</div>}</div>)}</div>
+      <button className="flex-1 text-left" onClick={() => setOpen(open === i ? null : i)}>Day {i + 1}: {r.title || `${r.book} ${r.from}${r.to > r.from ? '–' + r.to : ''}`}{r.title && r.book ? ` · ${r.book} ${r.from}${r.to > r.from ? '–' + r.to : ''}` : ''}{i === next ? ' ← next' : ''}</button></div>
+      {open === i && <div style={{ fontSize: settings.font }} className="mt-2 space-y-2">{r.body && <p className="whitespace-pre-wrap">{r.body}</p>}{r.book && reading(r)}</div>}</div>)}</div>
 }
 
 function PlanAdmin() {
-  const [plans, setPlans] = useLS<Plan[] | null>('draftPlans', null); const [title, setTitle] = useState('Matthew in 30 days'); const [book, setBook] = useState('Matthew'); const [ch, setCh] = useState(28); const [days, setDays] = useState(30); const [m, setM] = useState('')
+  const [plans, setPlans] = useLS<Plan[] | null>('draftPlans', null); const [title, setTitle] = useState('Matthew in 30 days'); const [book, setBook] = useState('Matthew'); const [ch, setCh] = useState(28); const [days, setDays] = useState(30); const [m, setM] = useState(''); const [openId, setOpenId] = useState('')
   useEffect(() => { if (!plans) get<Plan[]>('plans/plans.json').then(setPlans).catch(() => setPlans([])) }, [])
   if (!plans) return null
+  const upPlan = (id: string, q: Partial<Plan>) => setPlans(plans.map(x => x.id === id ? { ...x, ...q } : x))
+  const upDay = (id: string, i: number, q: Partial<PDay>) => setPlans(plans.map(x => x.id === id ? { ...x, days: x.days.map((d, k) => k === i ? { ...d, ...q } : d) } : x))
+  const createSeries = () => { if (days < 1) return; const id = 'p' + Date.now(); setPlans([...plans, { id, title, days: Array.from({ length: days }, (_, i) => ({ book: '', from: 1, to: 1, title: 'Day ' + (i + 1), body: '' })) }]); setOpenId(id); setM(`Made a ${days}-day devotional series. Fill in each day below.`) }
   const create = () => { const n = Math.min(days, ch); if (n < 1) return setM('Days and chapters must be at least 1')
     const list: PDay[] = Array.from({ length: n }, (_, i) => ({ book, from: Math.floor(i * ch / n) + 1, to: Math.floor((i + 1) * ch / n) }))
     setPlans([...plans, { id: 'p' + Date.now(), title, days: list }]); setM(days > ch ? `Made ${n} days (one chapter minimum per day, so it was limited from ${days}).` : `Made ${n} days.`) }
@@ -99,9 +102,28 @@ function PlanAdmin() {
     <div className="flex flex-wrap gap-2 text-sm text-black"><input className="border rounded px-2" value={title} onChange={e => setTitle(e.target.value)} /><input className="border rounded px-2 w-28" value={book} onChange={e => setBook(e.target.value)} />
       <label className="dark:text-white">Chapters <input type="number" min={1} className="border rounded px-2 w-16 text-black" value={ch} onChange={e => setCh(+e.target.value)} /></label>
       <label className="dark:text-white">Days <input type="number" min={1} className="border rounded px-2 w-16 text-black" value={days} onChange={e => setDays(+e.target.value)} /></label></div>
-    <button className={btn} onClick={create}>Create plan</button>{m && <p className="text-sm">{m}</p>}
-    {plans.map(p => <div key={p.id} className="text-sm">{p.title} · {p.days.length} days <button onClick={() => confirm('Delete plan?') && setPlans(plans.filter(x => x.id !== p.id))}>🗑</button></div>)}
+    <button className={btn} onClick={create}>Create reading plan</button> <button className={btn} onClick={createSeries}>Create devotional series</button>{m && <p className="text-sm">{m}</p>}
+    {plans.map(p => <div key={p.id} className={card + ' text-sm space-y-2'}><div className="flex gap-2"><input className="flex-1 border rounded px-2" value={p.title} onChange={e => upPlan(p.id, { title: e.target.value })} /><button onClick={() => setOpenId(openId === p.id ? '' : p.id)}>✎ {p.days.length} days</button><button onClick={() => confirm('Delete plan?') && setPlans(plans.filter(x => x.id !== p.id))}>🗑</button></div>
+      {openId === p.id && p.days.map((d, i) => <div key={i} className="space-y-1 border-t pt-2"><b>Day {i + 1}</b>
+        <input className="w-full border rounded px-2" placeholder="Devotion title" value={d.title || ''} onChange={e => upDay(p.id, i, { title: e.target.value })} />
+        <textarea className="w-full border rounded px-2" rows={3} placeholder="Devotion text (leave empty for reading only)" value={d.body || ''} onChange={e => upDay(p.id, i, { body: e.target.value })} />
+        <div className="flex flex-wrap items-center gap-2"><input className="border rounded px-2 w-32" placeholder="Book, e.g. John" value={d.book} onChange={e => upDay(p.id, i, { book: e.target.value })} />chapters <input type="number" min={1} className="border rounded px-2 w-16" value={d.from} onChange={e => upDay(p.id, i, { from: +e.target.value })} /> to <input type="number" min={1} className="border rounded px-2 w-16" value={d.to} onChange={e => upDay(p.id, i, { to: +e.target.value })} /></div></div>)}</div>)}
     <button className={btn} onClick={() => save('plans.json', plans)}>Export plans.json</button></section>
+}
+
+function Saved() {
+  const [marks, setMarks] = useLS<Record<string, { color?: string; note?: string; bookmark?: boolean }>>('marks', {})
+  const [idx, setIdx] = useState<Entry[]>([]); const [bibles, setBibles] = useState<Record<string, Bible>>({}); const [custom] = useLS<Bible[]>('customBibles', []); const [f, setF] = useState('all')
+  useEffect(() => { get<Entry[]>('bibles/index.json').then(setIdx).catch(() => {}) }, [])
+  const ids = Array.from(new Set(Object.keys(marks).map(k => k.split('|')[0])))
+  useEffect(() => { ids.forEach(id => { const c = custom.find(b => b.meta.id === id); if (c) { setBibles(o => ({ ...o, [id]: c })); return } const e = idx.find(x => x.id === id); if (e) get<Bible>('bibles/' + e.path).then(b => setBibles(o => ({ ...o, [id]: b }))).catch(() => {}) }) }, [idx, ids.join(',')])
+  const items = Object.entries(marks).filter(([, m]) => f === 'all' ? (m.bookmark || m.color || m.note) : f === 'bookmarks' ? m.bookmark : f === 'highlights' ? m.color : m.note)
+  return <div className="space-y-3"><h2 className="font-bold">Saved</h2>
+    <div className="flex gap-3 text-sm">{['all', 'bookmarks', 'highlights', 'notes'].map(t => <button key={t} className={f === t ? 'font-bold underline' : ''} onClick={() => setF(t)}>{t}</button>)}</div>
+    {!items.length && <p className="text-sm opacity-70">Nothing here yet. Use the star, the colored dots or the pencil on a Bible verse.</p>}
+    {items.map(([k, m]) => { const [id, bk, ch, v] = k.split('|'); const t = bibles[id]?.books.find(b => b.name === bk)?.chapters[+ch]?.[+v]
+      return <div key={k} className={card + ' text-sm'} style={{ borderLeft: m.color ? `6px solid ${m.color}` : undefined }}><b>{m.bookmark ? '★ ' : ''}{bk} {+ch + 1}:{+v + 1}</b> <span className="opacity-60">({id})</span><p>{t || '…'}</p>{m.note && <p className="italic opacity-80">✎ {m.note}</p>}
+        <button className="text-xs underline" onClick={() => { const n = { ...marks }; delete n[k]; setMarks(n) }}>Remove</button></div> })}</div>
 }
 
 function Devotions() {
@@ -157,11 +179,12 @@ export default function App() {
   const restore = async (f: File) => { try { const j = JSON.parse(await f.text()); Object.entries(j).forEach(([k, v]) => localStorage.setItem(k, v as string)); location.reload() } catch { alert('Invalid backup') } }
   return <div className="min-h-screen"><div className="max-w-2xl mx-auto p-4 space-y-4">
     <header className="flex justify-between items-center"><h1 className="text-xl font-bold sd-gold flex items-center gap-2"><img src={B + 'icons/icon.png'} alt="" className="w-9 h-9 rounded-xl" />{theme.appName || 'Salem Daily'}</h1>
-      <nav className="flex gap-3 text-sm">{[['', 'Home'], ['bible', 'Bible'], ['devotions', 'Devotions'], ['plans', 'Plans'], ['settings', 'Settings']].map(([r, l]) => <a key={r} href={'#/' + r} className={tab === r ? 'font-bold underline' : ''}>{l}</a>)}</nav></header>
+      <nav className="flex flex-wrap justify-end gap-x-3 text-sm">{[['', 'Home'], ['bible', 'Bible'], ['devotions', 'Devotions'], ['plans', 'Plans'], ['saved', 'Saved'], ['settings', 'Settings']].map(([r, l]) => <a key={r} href={'#/' + r} className={tab === r ? 'font-bold underline' : ''}>{l}</a>)}</nav></header>
     {tab === '' && <div className="space-y-3">{theme.hero && <img src={B + theme.hero} alt="" className="w-full rounded-2xl max-h-64 object-cover" onError={e => (e.currentTarget.style.display = 'none')} />}<h2 className="text-lg">Hello, {name}</h2>{theme.tagline && <p className="text-sm opacity-70">{theme.tagline}</p>}{verse && <blockquote className={card}>{verse.text}<footer className="text-sm opacity-70">— {verse.ref}</footer></blockquote>}</div>}
     {tab === 'bible' && <Bible settings={settings} />}
     {tab === 'devotions' && <Devotions />}
     {tab === 'plans' && <Plans settings={settings} />}
+    {tab === 'saved' && <Saved />}
     {tab === 'admin' && <Admin />}
     {tab === 'settings' && <div className="space-y-3">
       <label className="block">Name <input className="border rounded px-2 text-black" value={name} onChange={e => setName(e.target.value)} /></label>
