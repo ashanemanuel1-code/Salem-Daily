@@ -59,6 +59,8 @@ function Admin() {
   useEffect(() => { if (!d) get<Devotion[]>('devotions/devotions.json').then(setD); if (!cats) get<Cat[]>('devotions/categories.json').then(setCats) }, [])
   if (!d || !cats) return <p>Loading…</p>
   const up = (i: number, p: Partial<Devotion>) => setD(d.map((x, k) => k === i ? { ...x, ...p } : x))
+  const [msg2, setMsg2] = useState('')
+  const importDev = async (f: File) => { try { const j = JSON.parse(await f.text()); if (!Array.isArray(j) || j.some((x: any) => !x.id || !x.title || typeof x.body !== 'string')) return setMsg2('Invalid file: it must be a list where every devotion has id, title and body'); setD(j.map((x: any) => ({ categories: [], published: false, date: new Date().toISOString().slice(0, 10), ...x }))); setMsg2(`Loaded ${j.length} devotions. Edit them below, then click Export devotions.json.`) } catch { setMsg2('This is not a valid JSON file') } }
   const importBible = async (f: File) => { try { const j = JSON.parse(await f.text()); const e = validateBible(j); if (e) return setMsg('Invalid: ' + e); setCb([...cb.filter(b => b.meta.id !== j.meta.id), j]); setMsg(`Imported ${j.meta.name} (${j.meta.language}, ${j.books.length} books). Use Export to place it in public/data/bibles/.`) } catch { setMsg('Not valid JSON') } }
   return <div className="space-y-4">
     <p className="text-xs">Local content tool only — not secure authentication. Drafts live in this browser. Export, then upload the files to GitHub (see README).</p>
@@ -70,7 +72,8 @@ function Admin() {
           <label><input type="checkbox" checked={x.published} onChange={e => up(i, { published: e.target.checked })} /> Published</label>
           <button onClick={() => confirm('Delete?') && setD(d.filter((_, k) => k !== i))}>🗑</button></div></div>)}
       <button className={btn} onClick={() => setD([...d, { id: 'd' + Date.now(), title: 'New devotion', body: '', categories: [], published: false, date: new Date().toISOString().slice(0, 10) }])}>+ Devotion</button>
-      <button className={btn} onClick={() => save('devotions.json', d)}>Export devotions.json</button></section>
+      <button className={btn} onClick={() => save('devotions.json', d)}>Export devotions.json</button>
+      <label className="block text-sm">Import devotions.json <input type="file" accept=".json" onChange={e => e.target.files?.[0] && importDev(e.target.files[0])} /></label>{msg2 && <p className="text-sm">{msg2}</p>}</section>
     <section className="space-y-2"><h2 className="font-bold">Categories</h2>
       {cats.map((c, i) => <div key={c.id} className="flex gap-2"><input className="border rounded px-2" value={c.name} onChange={e => setCats(cats.map((x, k) => k === i ? { ...x, name: e.target.value } : x))} /><button onClick={() => setCats(cats.filter((_, k) => k !== i))}>🗑</button></div>)}
       <button className={btn} onClick={() => setCats([...cats, { id: 'c' + Date.now(), name: 'New category' }])}>+ Category</button>
