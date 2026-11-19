@@ -21,6 +21,7 @@ export const validateBible = (j: any): string | null => {
 }
 
 const NAMES: Record<string, string> = Object.fromEntries('GEN EXO LEV NUM DEU JOS JDG RUT 1SA 2SA 1KI 2KI 1CH 2CH EZR NEH EST JOB PSA PRO ECC SNG ISA JER LAM EZK DAN HOS JOL AMO OBA JON MIC NAM HAB ZEP HAG ZEC MAL MAT MRK LUK JHN ACT ROM 1CO 2CO GAL EPH PHP COL 1TH 2TH 1TI 2TI TIT PHM HEB JAS 1PE 2PE 1JN 2JN 3JN JUD REV'.split(' ').map((c, i) => [c, 'Genesis,Exodus,Leviticus,Numbers,Deuteronomy,Joshua,Judges,Ruth,1 Samuel,2 Samuel,1 Kings,2 Kings,1 Chronicles,2 Chronicles,Ezra,Nehemiah,Esther,Job,Psalms,Proverbs,Ecclesiastes,Song of Solomon,Isaiah,Jeremiah,Lamentations,Ezekiel,Daniel,Hosea,Joel,Amos,Obadiah,Jonah,Micah,Nahum,Habakkuk,Zephaniah,Haggai,Zechariah,Malachi,Matthew,Mark,Luke,John,Acts,Romans,1 Corinthians,2 Corinthians,Galatians,Ephesians,Philippians,Colossians,1 Thessalonians,2 Thessalonians,1 Timothy,2 Timothy,Titus,Philemon,Hebrews,James,1 Peter,2 Peter,1 John,2 John,3 John,Jude,Revelation'.split(',')[i]]))
+const BOOK_LIST = Object.values(NAMES)
 const parseUsfx = (xml: string): { books: Bible['books'] } | string => {
   const doc = new DOMParser().parseFromString(xml, 'text/xml'); if (doc.querySelector('parsererror')) return 'This is not valid XML'
   const out: Bible['books'] = []
@@ -105,8 +106,8 @@ function PlanAdmin() {
   const create = () => { const n = Math.min(days, ch); if (n < 1) return setM('Days and chapters must be at least 1')
     const list: PDay[] = Array.from({ length: n }, (_, i) => ({ book, from: Math.floor(i * ch / n) + 1, to: Math.floor((i + 1) * ch / n) }))
     setPlans([...plans, { id: 'p' + Date.now(), title, days: list }]); setM(days > ch ? `Made ${n} days (one chapter minimum per day, so it was limited from ${days}).` : `Made ${n} days.`) }
-  return <section className="space-y-2"><h2 className="font-bold">Reading plans</h2>
-    <div className="flex flex-wrap items-center gap-2 text-sm"><input className="border rounded px-2" value={title} onChange={e => setTitle(e.target.value)} /><input className="border rounded px-2 w-28" value={book} onChange={e => setBook(e.target.value)} />
+  return <section className="space-y-2"><h2 className="font-bold">Reading plans</h2><datalist id="books">{BOOK_LIST.map(n => <option key={n} value={n} />)}</datalist>
+    <div className="flex flex-wrap items-center gap-2 text-sm"><input className="border rounded px-2" value={title} onChange={e => setTitle(e.target.value)} /><input list="books" className="border rounded px-2 w-32" placeholder="Book" value={book} onChange={e => setBook(e.target.value)} />
       <label>Chapters <input type="number" min={1} className="border rounded px-2 w-16 text-black" value={ch} onChange={e => setCh(+e.target.value)} /></label>
       <label>Days <input type="number" min={1} className="border rounded px-2 w-16 text-black" value={days} onChange={e => setDays(+e.target.value)} /></label></div>
     <button className={btn} onClick={create}>Create reading plan</button> <button className={btn} onClick={createSeries}>Create devotional series</button>{m && <p className="text-sm">{m}</p>}
@@ -114,7 +115,7 @@ function PlanAdmin() {
       {openId === p.id && p.days.map((d, i) => <div key={i} className="space-y-1 border-t pt-2"><b>Day {i + 1}</b>
         <input className="w-full border rounded px-2" placeholder="Devotion title" value={d.title || ''} onChange={e => upDay(p.id, i, { title: e.target.value })} />
         <textarea className="w-full border rounded px-2" rows={3} placeholder="Devotion text (leave empty for reading only)" value={d.body || ''} onChange={e => upDay(p.id, i, { body: e.target.value })} />
-        {[d as PRead, ...(d.more || [])].map((x, k) => <div key={k} className="flex flex-wrap items-center gap-1"><input className="border rounded px-2 w-28" placeholder="Book" value={x.book} onChange={e => upRead(p.id, i, k, { book: e.target.value })} />ch <input type="number" min={1} className="border rounded px-1 w-14" value={x.from} onChange={e => upRead(p.id, i, k, { from: +e.target.value, to: Math.max(+e.target.value, x.to) })} />–<input type="number" min={1} className="border rounded px-1 w-14" value={x.to} onChange={e => upRead(p.id, i, k, { to: +e.target.value })} /> verses <input type="number" min={1} className="border rounded px-1 w-14" placeholder="from" value={x.vFrom || ''} onChange={e => upRead(p.id, i, k, { vFrom: +e.target.value || undefined })} />–<input type="number" min={1} className="border rounded px-1 w-14" placeholder="to" value={x.vTo || ''} onChange={e => upRead(p.id, i, k, { vTo: +e.target.value || undefined })} />{k > 0 && <button onClick={() => delRead(p.id, i, k)}>✕</button>}</div>)}
+        {[d as PRead, ...(d.more || [])].map((x, k) => <div key={k} className="flex flex-wrap items-center gap-1"><input list="books" style={x.book && !BOOK_LIST.includes(x.book) ? { outline: '2px solid #f87171' } : undefined} className="border rounded px-2 w-32" placeholder="Book (type a letter)" value={x.book} onChange={e => upRead(p.id, i, k, { book: e.target.value })} />ch <input type="number" min={1} className="border rounded px-1 w-14" value={x.from} onChange={e => upRead(p.id, i, k, { from: +e.target.value, to: Math.max(+e.target.value, x.to) })} />–<input type="number" min={1} className="border rounded px-1 w-14" value={x.to} onChange={e => upRead(p.id, i, k, { to: +e.target.value })} /> verses <input type="number" min={1} className="border rounded px-1 w-14" placeholder="from" value={x.vFrom || ''} onChange={e => upRead(p.id, i, k, { vFrom: +e.target.value || undefined })} />–<input type="number" min={1} className="border rounded px-1 w-14" placeholder="to" value={x.vTo || ''} onChange={e => upRead(p.id, i, k, { vTo: +e.target.value || undefined })} />{k > 0 && <button onClick={() => delRead(p.id, i, k)}>✕</button>}</div>)}
         <button className="underline" onClick={() => addRead(p.id, i)}>+ Add another reading</button></div>)}</div>)}
     <button className={btn} onClick={() => save('plans.json', plans)}>Export plans.json</button></section>
 }
@@ -178,7 +179,9 @@ function Admin() {
 
 export default function App() {
   const route = useHash(); const [name, setName] = useLS('name', ''); const [settings, setSettings] = useLS('settings', { translation: 'sample', font: 18, dark: false })
-  const [verse, setVerse] = useState<{ ref: string; text: string } | null>(null); const [theme, setTheme] = useState<any>({})
+  const [verse, setVerse] = useState<{ ref: string; text: string } | null>(null); const [theme, setTheme] = useState<any>({}); const [hi, setHi] = useState(0)
+  const heroList: string[] = ([] as string[]).concat(theme.hero || []); const heroSrc = heroList.length ? heroList[hi % heroList.length] : ''
+  useEffect(() => { if (heroList.length < 2) return; const t = setInterval(() => setHi(x => x + 1), 6000); return () => clearInterval(t) }, [heroList.length])
   useEffect(() => { get<any>('theme.json').then(t => { setTheme(t); const r = document.documentElement.style; if (t.gold) r.setProperty('--gold', t.gold); if (t.bg) r.setProperty('--bg', t.bg) }).catch(() => {}) }, [])
   useEffect(() => { get<any>('daily-verse.json').then(setVerse).catch(() => {}) }, [])
   useEffect(() => { document.documentElement.classList.toggle('dark', settings.dark) }, [settings.dark])
@@ -186,9 +189,9 @@ export default function App() {
   const tab = route.split('/')[0]
   const restore = async (f: File) => { try { const j = JSON.parse(await f.text()); Object.entries(j).forEach(([k, v]) => localStorage.setItem(k, v as string)); location.reload() } catch { alert('Invalid backup') } }
   return <div className="min-h-screen"><div className="max-w-2xl mx-auto p-4 space-y-4">
-    <header className="flex justify-between items-center"><h1 className="text-xl font-bold sd-gold flex items-center gap-2"><img src={B + 'icons/icon.png'} alt="" className="w-9 h-9 rounded-xl" />{theme.appName || 'Salem Daily'}</h1>
+    <header className="flex justify-between items-center"><h1 className="text-xl font-bold sd-gold flex items-center gap-2"><img src={B + 'icons/icon.png'} alt="" className="w-9 h-9 rounded-xl glow" />{theme.appName || 'Salem Daily'}</h1>
       <nav className="flex flex-wrap justify-end gap-x-3 text-sm">{[['', 'Home'], ['bible', 'Bible'], ['devotions', 'Devotions'], ['plans', 'Plans'], ['saved', 'Saved'], ['settings', 'Settings']].map(([r, l]) => <a key={r} href={'#/' + r} className={tab === r ? 'font-bold underline' : ''}>{l}</a>)}</nav></header>
-    {tab === '' && <div className="space-y-3">{theme.hero && <img src={B + theme.hero} alt="" className="w-full rounded-2xl max-h-64 object-cover" onError={e => (e.currentTarget.style.display = 'none')} />}<h2 className="text-lg">Hello, {name}</h2>{theme.tagline && <p className="text-sm opacity-70">{theme.tagline}</p>}{verse && <blockquote className={card}>{verse.text}<footer className="text-sm opacity-70">— {verse.ref}</footer></blockquote>}</div>}
+    {tab === '' && <div className="space-y-3">{heroSrc && <div className="overflow-hidden rounded-2xl"><img key={heroSrc} src={B + heroSrc} alt="" className="w-full max-h-64 object-cover kenburns rise" onError={e => (e.currentTarget.style.display = 'none')} /></div>}<h2 className="text-lg rise">Hello, {name}</h2>{theme.tagline && <p className="text-sm opacity-70">{theme.tagline}</p>}{verse && <blockquote className={card + ' rise'} style={{ animationDelay: '.3s' }}>{verse.text}<footer className="text-sm opacity-70">— {verse.ref}</footer></blockquote>}</div>}
     {tab === 'bible' && <Bible settings={settings} />}
     {tab === 'devotions' && <Devotions />}
     {tab === 'plans' && <Plans settings={settings} />}
@@ -205,6 +208,6 @@ export default function App() {
 
 function Welcome({ onDone }: { onDone: (n: string) => void }) {
   const [n, setN] = useState('')
-  return <div className="min-h-screen grid place-items-center p-6"><div className="max-w-sm w-full space-y-3 text-center"><img src={B + 'icons/icon.png'} alt="" className="w-28 h-28 mx-auto rounded-3xl" /><h1 className="text-3xl font-bold sd-gold">Salem Daily</h1><p>What should we call you? Your name stays on this device.</p>
+  return <div className="min-h-screen grid place-items-center p-6"><div className="max-w-sm w-full space-y-3 text-center"><img src={B + 'icons/icon.png'} alt="" className="w-28 h-28 mx-auto rounded-3xl glow" /><h1 className="text-3xl font-bold sd-gold">Salem Daily</h1><p>What should we call you? Your name stays on this device.</p>
     <input className="border rounded px-3 py-2 w-full" value={n} onChange={e => setN(e.target.value)} placeholder="Your name" /><button className={btn} disabled={!n.trim()} onClick={() => onDone(n.trim())}>Continue</button></div></div>
 }

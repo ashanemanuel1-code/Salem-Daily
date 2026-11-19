@@ -7,3 +7,9 @@ body{background:radial-gradient(circle at top,#2a1f05 0,var(--bg) 55%) fixed;col
 .sd-btn:disabled{opacity:.4}
 input:not([type=checkbox]):not([type=range]):not([type=file]),textarea,select{background:#1a1a1f!important;color:var(--ink)!important;border:1px solid color-mix(in srgb,var(--gold) 40%,transparent)!important}
 nav a{padding:.15rem .3rem;border-radius:8px}nav a.font-bold{color:var(--gold)}
+@keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+@keyframes glow{50%{filter:drop-shadow(0 0 12px rgba(212,160,23,.85))}}
+@keyframes kb{to{transform:scale(1.08)}}
+.rise{animation:rise .8s ease both}.glow{animation:glow 3.5s ease-in-out infinite}.kenburns{animation:rise .8s ease both,kb 18s ease-in-out infinite alternate}
+@media (prefers-reduced-motion:reduce){*{animation:none!important}}
+@media (max-width:640px){header nav{position:fixed;left:0;right:0;bottom:0;z-index:20;justify-content:space-around!important;background:rgba(11,11,15,.96);border-top:1px solid color-mix(in srgb,var(--gold) 40%,transparent);padding:.7rem .25rem calc(.7rem + env(safe-area-inset-bottom));font-size:.8rem}.max-w-2xl{padding-bottom:5.5rem}}
