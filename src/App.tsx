@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 const B = import.meta.env.BASE_URL
 const get = async <T,>(p: string): Promise<T> => { const r = await fetch(B + 'data/' + p); if (!r.ok) throw new Error(p); return r.json() }
 const ls = <T,>(k: string, d: T): T => { try { const v = localStorage.getItem('sd:' + k); return v ? JSON.parse(v) : d } catch { return d } }
@@ -55,9 +55,21 @@ const useHash = () => { const [h, s] = useState(location.hash.slice(2) || ''); u
 const card = 'sd-card'
 const btn = 'sd-btn'
 
+function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+  return <><div className="sheet-back" onClick={onClose} /><div className="sheet"><div className="mx-auto mb-3 h-1 w-10 rounded-full bg-white/30" /><h3 className="sd-gold font-bold mb-3">{title}</h3>{children}</div></>
+}
+
+function BiblePicker({ opts, settings, setSettings, block }: any) {
+  const [open, setOpen] = useState(false)
+  const cur = opts.find((o: any) => o.id === settings.translation) || opts[0]
+  if (!cur) return null
+  return <><button className={'sd-chip flex items-center gap-2' + (block ? ' w-full justify-between' : '')} onClick={() => setOpen(true)}><span>📖 {cur.name}</span><span>▾</span></button>
+    {open && <Sheet title="Choose a Bible" onClose={() => setOpen(false)}>{opts.map((o: any) => <button key={o.id} className={'opt' + (o.id === cur.id ? ' on' : '')} onClick={() => { setSettings({ ...settings, translation: o.id }); setOpen(false) }}>{o.name}{o.language && <span className="block text-xs opacity-70">{o.language}</span>}</button>)}</Sheet>}</>
+}
+
 function Bible({ settings }: { settings: any }) {
   const [idx, setIdx] = useState<Entry[]>([]); const tid: string = settings.translation; const [bible, setBible] = useState<Bible | null>(null)
-  const [bi, setBi] = useState(0); const [ci, setCi] = useState(0); const [q, setQ] = useState('')
+  const [pick, setPick] = useState(''); const [bi, setBi] = useState(0); const [ci, setCi] = useState(0); const [q, setQ] = useState('')
   const [marks, setMarks] = useLS<Record<string, { color?: string; note?: string; bookmark?: boolean }>>('marks', {})
   const [custom] = useLS<Bible[]>('customBibles', [])
   useEffect(() => { get<Entry[]>('bibles/index.json').then(setIdx).catch(() => {}) }, [])
@@ -70,8 +82,9 @@ function Bible({ settings }: { settings: any }) {
   return <div className="space-y-3">
     <div className="flex flex-wrap gap-2">
 
-      <select className={card} value={bi} onChange={e => { setBi(+e.target.value); setCi(0) }}>{bible.books.map((b, i) => <option key={i} value={i}>{b.name}</option>)}</select>
-      <select className={card} value={ci} onChange={e => setCi(+e.target.value)}>{book.chapters.map((_, i) => <option key={i} value={i}>Chapter {i + 1}</option>)}</select>
+      <button className="sd-chip" onClick={() => setPick('book')}>{book.name} ▾</button><button className="sd-chip" onClick={() => setPick('ch')}>Chapter {ci + 1} ▾</button>
+      {pick === 'book' && <Sheet title="Choose a book" onClose={() => setPick('')}>{(bible.books.length === 66 ? [['Old Testament', 0, 39], ['New Testament', 39, 66]] : [['Books', 0, bible.books.length]]).map(([t, a, z]: any) => <div key={t}><h4 className="text-xs uppercase opacity-60 mb-2">{t}</h4><div className="grid grid-cols-2 gap-2 mb-4">{bible.books.slice(a, z).map((b, k) => <button key={a + k} className={'opt !mb-0' + (a + k === bi ? ' on' : '')} onClick={() => { setBi(a + k); setCi(0); setPick('') }}>{b.name}</button>)}</div></div>)}</Sheet>}
+      {pick === 'ch' && <Sheet title={book.name} onClose={() => setPick('')}><div className="grid grid-cols-5 gap-2">{book.chapters.map((_, i) => <button key={i} className={'opt !mb-0 text-center' + (i === ci ? ' on' : '')} onClick={() => { setCi(i); setPick('') }}>{i + 1}</button>)}</div></Sheet>}
     </div>
     <input className={card + ' w-full'} placeholder="Search this translation…" value={q} onChange={e => setQ(e.target.value)} />
     {hits.map((h, k) => <p key={k} className="text-sm">{h.b} {h.i + 1}:{h.v + 1} — {h.t}</p>)}
@@ -82,7 +95,7 @@ function Bible({ settings }: { settings: any }) {
 }
 
 function Plans({ settings }: { settings: any }) {
-  const [plans, setPlans] = useState<Plan[]>([]); const [sel, setSel] = useState(''); const [open, setOpen] = useState<number | null>(null)
+  const [plans, setPlans] = useState<Plan[]>([]); const [sel, setSel] = useState(''); const [open, setOpen] = useState<number | null>(null); const [sw, setSw] = useState(false)
   const [items, setItems] = useLS<string[]>('planItems', [])
   const [idx, setIdx] = useState<Entry[]>([]); const [bible, setBible] = useState<Bible | null>(null); const [custom] = useLS<Bible[]>('customBibles', [])
   useEffect(() => { get<Plan[]>('plans/plans.json').then(setPlans).catch(() => {}); get<Entry[]>('bibles/index.json').then(setIdx).catch(() => {}) }, [])
@@ -99,9 +112,10 @@ function Plans({ settings }: { settings: any }) {
   const plan = plans.find(p => p.id === sel)
   const bar = (n: number, t: number) => <span className="block h-1 mt-2 rounded bg-white/10"><span className="block h-1 rounded" style={{ width: `${t ? n * 100 / t : 0}%`, background: 'var(--gold)' }} /></span>
   if (!plan) return <div className="space-y-3"><h2 className="font-bold">Reading plans</h2>{!plans.length && <p>No plans yet.</p>}{plans.map(p => { const n = p.days.filter((_, i) => dayDone(p, i)).length
-    return <button key={p.id} className={card + ' block w-full text-left'} onClick={() => { setSel(p.id); const nx = p.days.findIndex((_, i) => !dayDone(p, i)); setOpen(nx < 0 ? 0 : nx) }}>{p.title}<span className="block text-xs opacity-70">{n} of {p.days.length} days done</span>{bar(n, p.days.length)}</button> })}</div>
+    return <button key={p.id} className={card + ' block w-full text-left'} onClick={() => { setSel(p.id); const nx = p.days.findIndex((_, i) => !dayDone(p, i)); setOpen(nx < 0 ? 0 : nx) }}><b className="sd-gold">{p.title}</b><span className="block text-xs opacity-70">{n >= p.days.length ? '✓ Completed' : n ? `Continue · Day ${p.days.findIndex((_, i) => !dayDone(p, i)) + 1}` : 'Start plan →'} · {n}/{p.days.length} days</span>{bar(n, p.days.length)}</button> })}</div>
   const nDone = plan.days.filter((_, i) => dayDone(plan, i)).length
-  return <div className="space-y-3"><button className="text-sm underline" onClick={() => setSel('')}>← All plans</button><h2 className="font-bold">{plan.title}</h2><div className="text-xs opacity-70">{nDone} of {plan.days.length} days done{bar(nDone, plan.days.length)}</div>
+  return <div className="space-y-3"><div className="flex justify-between items-center"><button className="text-sm underline" onClick={() => setSel('')}>← All plans</button><button className="sd-chip" onClick={() => setSw(true)}>⇄ Switch plan</button></div>
+    {sw && <Sheet title="Choose a plan" onClose={() => setSw(false)}>{plans.map(q => <button key={q.id} className={'opt' + (q.id === plan.id ? ' on' : '')} onClick={() => { setSel(q.id); const nx = q.days.findIndex((_, i) => !dayDone(q, i)); setOpen(nx < 0 ? 0 : nx); setSw(false) }}>{q.title}<span className="block text-xs opacity-70">{q.days.filter((_, i) => dayDone(q, i)).length}/{q.days.length} days done</span></button>)}</Sheet>}<h2 className="font-bold">{plan.title}</h2><div className="text-xs opacity-70">{nDone} of {plan.days.length} days done{bar(nDone, plan.days.length)}</div>
     {plan.days.map((r, i) => { const ks = keysOf(plan, i); const got = ks.filter(has).length
       return <div key={i} className={card}><button className="w-full flex justify-between gap-2 text-left" onClick={() => setOpen(open === i ? null : i)}><span>{ks.length > 0 && got === ks.length ? '✓ ' : ''}Day {i + 1}: {r.title || reads(r).map(refOf).join(', ')}</span><span className="text-xs opacity-70 whitespace-nowrap">{got}/{ks.length}</span></button>
         {open === i && <div style={readerStyle(settings)} className="mt-3 space-y-4">
@@ -206,7 +220,7 @@ function SettingsPage({ name, setName, settings, setSettings, opts, restore }: a
       <div className="flex gap-3 items-center"><span className="text-sm">Accent</span>{['#d4a017', '#38bdf8', '#fb7185', '#4ade80', '#a78bfa'].map(c => <button key={c} aria-label={c} className="w-7 h-7 rounded-full" style={{ background: c, boxShadow: settings.accent === c ? '0 0 0 3px var(--ink)' : 'none' }} onClick={() => up({ accent: c })} />)}</div>
       <label className={row}>Animations<input type="checkbox" checked={settings.motion} onChange={e => up({ motion: e.target.checked })} /></label></div>
     <div className="sd-card space-y-2"><h3 className="sd-gold font-semibold">Reading</h3>
-      {opts.length > 0 && <label className={row}>Bible<select className="rounded-lg px-2 py-1 max-w-[12rem]" value={opts.some((o: any) => o.id === settings.translation) ? settings.translation : opts[0].id} onChange={e => up({ translation: e.target.value })}>{opts.map((o: any) => <option key={o.id} value={o.id}>{o.name}</option>)}</select></label>}
+      {opts.length > 0 && <div className={row}>Bible<BiblePicker opts={opts} settings={settings} setSettings={setSettings} /></div>}
       <label className={row}>Text size {settings.font}px<input type="range" min={14} max={32} value={settings.font} onChange={e => up({ font: +e.target.value })} /></label>
       <label className={row}>Line spacing<input type="range" min={1.3} max={2.2} step={0.1} value={settings.spacing} onChange={e => up({ spacing: +e.target.value })} /></label>
       <label className={row}>Serif font<input type="checkbox" checked={settings.serif} onChange={e => up({ serif: e.target.checked })} /></label>
@@ -224,7 +238,7 @@ export default function App() {
   const route = useHash(); const [name, setName] = useLS('name', ''); const [saved, setSettings] = useLS<any>('settings', {}); const settings: any = { translation: 'sample', font: 18, mode: 'dark', accent: '#d4a017', serif: false, spacing: 1.6, vnums: true, motion: true, ...saved }
   const [verse, setVerse] = useState<{ ref: string; text: string } | null>(null); const [theme, setTheme] = useState<any>({}); const [hi, setHi] = useState(0); const [bl, setBl] = useState<Entry[]>([]); const [cb2] = useLS<Bible[]>('customBibles', [])
   useEffect(() => { get<Entry[]>('bibles/index.json').then(setBl).catch(() => {}) }, [])
-  const opts = [...bl.map(b => ({ id: b.id, name: b.name })), ...cb2.map(c => ({ id: c.meta.id, name: c.meta.name }))]
+  const opts = [...bl.map(b => ({ id: b.id, name: b.name, language: b.language })), ...cb2.map(c => ({ id: c.meta.id, name: c.meta.name, language: c.meta.language }))]
   const heroList: string[] = ([] as string[]).concat(theme.hero || []); const heroSrc = heroList.length ? heroList[hi % heroList.length] : ''
   useEffect(() => { if (heroList.length < 2) return; const t = setInterval(() => setHi(x => x + 1), 6000); return () => clearInterval(t) }, [heroList.length])
   useEffect(() => { get<any>('theme.json').then(t => { setTheme(t); const r = document.documentElement.style; if (t.bg) r.setProperty('--bg', t.bg) }).catch(() => {}) }, [])
@@ -238,7 +252,7 @@ export default function App() {
   return <div className="min-h-screen"><div className="max-w-2xl mx-auto p-4 space-y-4">
     <header className="flex justify-between items-center"><h1 className="text-xl font-bold sd-gold flex items-center gap-2"><img src={B + 'icons/icon.png'} alt="" className="w-9 h-9 rounded-xl glow" />{theme.appName || 'Salem Daily'}</h1>
       <nav className="flex flex-wrap justify-end gap-x-3 text-sm">{[['', 'Home'], ['bible', 'Bible'], ['devotions', 'Devotions'], ['plans', 'Plans'], ['saved', 'Saved'], ['settings', 'Settings']].map(([r, l]) => <a key={r} href={'#/' + r} className={'tab' + (tab === r ? ' active' : '')} onClick={() => navigator.vibrate?.(12)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d={ICONS[r]} /></svg><span>{l}</span></a>)}</nav></header>
-    {(tab === 'bible' || tab === 'plans') && opts.length > 1 && <select className="w-full text-sm rounded-lg px-2 py-1" value={opts.some(o => o.id === settings.translation) ? settings.translation : opts[0].id} onChange={e => setSettings({ ...settings, translation: e.target.value })}>{opts.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}</select>}
+    {(tab === 'bible' || tab === 'plans') && opts.length > 1 && <BiblePicker opts={opts} settings={settings} setSettings={setSettings} block />}
     <div key={tab} className="rise space-y-4">
     {tab === '' && <div className="space-y-3">{heroSrc && <div className="overflow-hidden rounded-2xl"><img key={heroSrc} src={B + heroSrc} alt="" className="w-full max-h-64 object-cover kenburns rise" onError={e => (e.currentTarget.style.display = 'none')} /></div>}<h2 className="text-lg rise">Hello, {name}</h2>{theme.tagline && <p className="text-sm opacity-70">{theme.tagline}</p>}{verse && <blockquote className={card + ' rise'} style={{ animationDelay: '.3s' }}>{verse.text}<footer className="text-sm opacity-70">— {verse.ref}</footer></blockquote>}</div>}
     {tab === 'bible' && <Bible settings={settings} />}
