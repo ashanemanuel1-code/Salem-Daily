@@ -75,8 +75,8 @@ function Bible({ settings }: { settings: any }) {
     </div>
     <input className={card + ' w-full'} placeholder="Search this translation…" value={q} onChange={e => setQ(e.target.value)} />
     {hits.map((h, k) => <p key={k} className="text-sm">{h.b} {h.i + 1}:{h.v + 1} — {h.t}</p>)}
-    <div style={{ fontSize: settings.font }} className="space-y-2">{verses.map((t, v) => { const m = marks[key(v)] || {}; return <p key={v} style={{ background: m.color }} className="rounded px-1">
-      <sup className="mr-1">{v + 1}</sup>{t} <button title="bookmark" onClick={() => set(v, { bookmark: !m.bookmark })}>{m.bookmark ? '★' : '☆'}</button>{' '}
+    <div style={readerStyle(settings)} className="space-y-2">{verses.map((t, v) => { const m = marks[key(v)] || {}; return <p key={v} style={{ background: m.color }} className="rounded px-1">
+      {settings.vnums && <sup className="mr-1">{v + 1}</sup>}{t} <button title="bookmark" onClick={() => set(v, { bookmark: !m.bookmark })}>{m.bookmark ? '★' : '☆'}</button>{' '}
       {['#fde68a', '#bbf7d0', '#bfdbfe', undefined].map((c, i) => <button key={i} onClick={() => set(v, { color: c })} className="inline-block w-3 h-3 rounded-full border ml-1" style={{ background: c || 'transparent' }} />)}
       <button className="ml-2 text-xs" onClick={() => { const n = prompt('Note', m.note || ''); if (n !== null) set(v, { note: n }) }}>✎</button>{m.note && <em className="block text-xs opacity-70">{m.note}</em>}</p> })}</div></div>
 }
@@ -104,7 +104,7 @@ function Plans({ settings }: { settings: any }) {
   return <div className="space-y-3"><button className="text-sm underline" onClick={() => setSel('')}>← All plans</button><h2 className="font-bold">{plan.title}</h2><div className="text-xs opacity-70">{nDone} of {plan.days.length} days done{bar(nDone, plan.days.length)}</div>
     {plan.days.map((r, i) => { const ks = keysOf(plan, i); const got = ks.filter(has).length
       return <div key={i} className={card}><button className="w-full flex justify-between gap-2 text-left" onClick={() => setOpen(open === i ? null : i)}><span>{ks.length > 0 && got === ks.length ? '✓ ' : ''}Day {i + 1}: {r.title || reads(r).map(refOf).join(', ')}</span><span className="text-xs opacity-70 whitespace-nowrap">{got}/{ks.length}</span></button>
-        {open === i && <div style={{ fontSize: settings.font }} className="mt-3 space-y-4">
+        {open === i && <div style={readerStyle(settings)} className="mt-3 space-y-4">
           {r.body && <section><label className="flex items-center gap-2 font-bold sd-gold"><input type="checkbox" checked={has(`${plan.id}|${i}|d`)} onChange={() => tick(`${plan.id}|${i}|d`)} />Devotion</label><p className="whitespace-pre-wrap mt-1">{r.body}</p></section>}
           {reads(r).map((x, k) => <section key={k}><label className="flex items-center gap-2 font-bold sd-gold"><input type="checkbox" checked={has(`${plan.id}|${i}|r${k}`)} onChange={() => tick(`${plan.id}|${i}|r${k}`)} />{refOf(x)}</label><div className="mt-1 space-y-1">{reading(x)}</div></section>)}</div>}</div> })}</div>
 }
@@ -193,16 +193,45 @@ function Admin() {
       {cb.map(b => <div key={b.meta.id} className="text-sm">{b.meta.name} · {b.meta.language} · {b.meta.license || 'license not stated'} <button onClick={() => save(b.meta.id + '.json', b)}>Export</button></div>)}</section><PlanAdmin /></div>
 }
 
+const readerStyle = (st: any) => ({ fontSize: st.font, lineHeight: st.spacing, fontFamily: st.serif ? 'Georgia, "Times New Roman", serif' : undefined })
+
+function SettingsPage({ name, setName, settings, setSettings, opts, restore }: any) {
+  const up = (p: object) => setSettings({ ...settings, ...p })
+  const row = 'flex items-center justify-between gap-3 py-1'
+  const chip = (on: boolean) => 'sd-chip' + (on ? ' on' : '')
+  return <div className="space-y-4"><h2 className="font-bold">Settings</h2>
+    <div className="sd-card space-y-2"><h3 className="sd-gold font-semibold">Profile</h3><label className={row}>Your name<input className="rounded-lg px-2 py-1 w-44" value={name} onChange={e => setName(e.target.value)} /></label></div>
+    <div className="sd-card space-y-3"><h3 className="sd-gold font-semibold">Appearance</h3>
+      <div className="flex gap-2">{[['dark', '🌙 Dark'], ['light', '☀️ Light'], ['auto', '🌓 Auto']].map(([m, l]) => <button key={m} className={chip(settings.mode === m)} onClick={() => up({ mode: m })}>{l}</button>)}</div>
+      <div className="flex gap-3 items-center"><span className="text-sm">Accent</span>{['#d4a017', '#38bdf8', '#fb7185', '#4ade80', '#a78bfa'].map(c => <button key={c} aria-label={c} className="w-7 h-7 rounded-full" style={{ background: c, boxShadow: settings.accent === c ? '0 0 0 3px var(--ink)' : 'none' }} onClick={() => up({ accent: c })} />)}</div>
+      <label className={row}>Animations<input type="checkbox" checked={settings.motion} onChange={e => up({ motion: e.target.checked })} /></label></div>
+    <div className="sd-card space-y-2"><h3 className="sd-gold font-semibold">Reading</h3>
+      {opts.length > 0 && <label className={row}>Bible<select className="rounded-lg px-2 py-1 max-w-[12rem]" value={opts.some((o: any) => o.id === settings.translation) ? settings.translation : opts[0].id} onChange={e => up({ translation: e.target.value })}>{opts.map((o: any) => <option key={o.id} value={o.id}>{o.name}</option>)}</select></label>}
+      <label className={row}>Text size {settings.font}px<input type="range" min={14} max={32} value={settings.font} onChange={e => up({ font: +e.target.value })} /></label>
+      <label className={row}>Line spacing<input type="range" min={1.3} max={2.2} step={0.1} value={settings.spacing} onChange={e => up({ spacing: +e.target.value })} /></label>
+      <label className={row}>Serif font<input type="checkbox" checked={settings.serif} onChange={e => up({ serif: e.target.checked })} /></label>
+      <label className={row}>Show verse numbers<input type="checkbox" checked={settings.vnums} onChange={e => up({ vnums: e.target.checked })} /></label>
+      <p className="rounded-lg p-3 border border-white/10" style={readerStyle(settings)}>{settings.vnums && <sup className="mr-1">1</sup>}The LORD is my shepherd; I shall not want.</p></div>
+    <div className="sd-card space-y-2"><h3 className="sd-gold font-semibold">My data</h3><p className="text-xs opacity-70">Everything is saved only on this device.</p>
+      <button className="sd-btn" onClick={() => save('salem-daily-backup.json', Object.fromEntries(Object.keys(localStorage).filter(k => k.startsWith('sd:')).map(k => [k, localStorage.getItem(k)])))}>Download my data</button>
+      <label className="block text-sm">Restore backup <input type="file" accept=".json" onChange={e => e.target.files?.[0] && restore(e.target.files[0])} /></label>
+      <div className="flex gap-2 flex-wrap"><button className="sd-chip" onClick={() => { if (confirm('Reset all plan progress?')) { localStorage.removeItem('sd:planItems'); location.reload() } }}>Reset plan progress</button>
+      <button className="sd-chip" onClick={() => { if (confirm('Erase ALL your saved data on this device?')) { Object.keys(localStorage).filter(k => k.startsWith('sd:')).forEach(k => localStorage.removeItem(k)); location.reload() } }}>Erase all my data</button></div></div>
+    <p className="text-xs opacity-60 text-center">Salem Daily · the app updates itself whenever new content is published.</p></div>
+}
+
 export default function App() {
-  const route = useHash(); const [name, setName] = useLS('name', ''); const [settings, setSettings] = useLS('settings', { translation: 'sample', font: 18, dark: false })
+  const route = useHash(); const [name, setName] = useLS('name', ''); const [saved, setSettings] = useLS<any>('settings', {}); const settings: any = { translation: 'sample', font: 18, mode: 'dark', accent: '#d4a017', serif: false, spacing: 1.6, vnums: true, motion: true, ...saved }
   const [verse, setVerse] = useState<{ ref: string; text: string } | null>(null); const [theme, setTheme] = useState<any>({}); const [hi, setHi] = useState(0); const [bl, setBl] = useState<Entry[]>([]); const [cb2] = useLS<Bible[]>('customBibles', [])
   useEffect(() => { get<Entry[]>('bibles/index.json').then(setBl).catch(() => {}) }, [])
   const opts = [...bl.map(b => ({ id: b.id, name: b.name })), ...cb2.map(c => ({ id: c.meta.id, name: c.meta.name }))]
   const heroList: string[] = ([] as string[]).concat(theme.hero || []); const heroSrc = heroList.length ? heroList[hi % heroList.length] : ''
   useEffect(() => { if (heroList.length < 2) return; const t = setInterval(() => setHi(x => x + 1), 6000); return () => clearInterval(t) }, [heroList.length])
-  useEffect(() => { get<any>('theme.json').then(t => { setTheme(t); const r = document.documentElement.style; if (t.gold) r.setProperty('--gold', t.gold); if (t.bg) r.setProperty('--bg', t.bg) }).catch(() => {}) }, [])
+  useEffect(() => { get<any>('theme.json').then(t => { setTheme(t); const r = document.documentElement.style; if (t.bg) r.setProperty('--bg', t.bg) }).catch(() => {}) }, [])
   useEffect(() => { get<any>('daily-verse.json').then(setVerse).catch(() => {}) }, [])
-  useEffect(() => { document.documentElement.classList.toggle('dark', settings.dark) }, [settings.dark])
+  useEffect(() => { const q = matchMedia('(prefers-color-scheme: dark)'); const f = () => { const m = settings.mode === 'auto' ? (q.matches ? 'dark' : 'light') : settings.mode; document.documentElement.dataset.theme = m; document.querySelector('meta[name=theme-color]')?.setAttribute('content', m === 'dark' ? '#0b0b0f' : '#fbf7ee') }; f(); q.addEventListener('change', f); return () => q.removeEventListener('change', f) }, [settings.mode])
+  useEffect(() => { document.documentElement.dataset.motion = settings.motion ? 'on' : 'off' }, [settings.motion])
+  useEffect(() => { document.documentElement.style.setProperty('--gold', saved.accent || theme.gold || '#d4a017') }, [saved.accent, theme.gold])
   if (!name) return <Welcome onDone={setName} />
   const tab = route.split('/')[0]
   const restore = async (f: File) => { try { const j = JSON.parse(await f.text()); Object.entries(j).forEach(([k, v]) => localStorage.setItem(k, v as string)); location.reload() } catch { alert('Invalid backup') } }
@@ -217,12 +246,7 @@ export default function App() {
     {tab === 'plans' && <Plans settings={settings} />}
     {tab === 'saved' && <Saved />}
     {tab === 'admin' && <Admin />}
-    {tab === 'settings' && <div className="space-y-3">
-      <label className="block">Name <input className="border rounded px-2 text-black" value={name} onChange={e => setName(e.target.value)} /></label>
-      <label className="block">Font size {settings.font}px <input type="range" min={14} max={32} value={settings.font} onChange={e => setSettings({ ...settings, font: +e.target.value })} /></label>
-      <label className="block"><input type="checkbox" checked={settings.dark} onChange={e => setSettings({ ...settings, dark: e.target.checked })} /> Dark theme</label>
-      <button className={btn} onClick={() => save('salem-daily-backup.json', Object.fromEntries(Object.keys(localStorage).filter(k => k.startsWith('sd:')).map(k => [k, localStorage.getItem(k)])))}>Download my data</button>
-      <label className="block text-sm">Restore backup <input type="file" accept=".json" onChange={e => e.target.files?.[0] && restore(e.target.files[0])} /></label></div>}
+    {tab === 'settings' && <SettingsPage name={name} setName={setName} settings={settings} setSettings={setSettings} opts={opts} restore={restore} />}
     </div>
   </div></div>
 }
