@@ -48,7 +48,7 @@ const card = 'sd-card'
 const btn = 'sd-btn'
 
 function Bible({ settings }: { settings: any }) {
-  const [idx, setIdx] = useState<Entry[]>([]); const [tid, setTid] = useState(settings.translation); const [bible, setBible] = useState<Bible | null>(null)
+  const [idx, setIdx] = useState<Entry[]>([]); const tid: string = settings.translation; const [bible, setBible] = useState<Bible | null>(null)
   const [bi, setBi] = useState(0); const [ci, setCi] = useState(0); const [q, setQ] = useState('')
   const [marks, setMarks] = useLS<Record<string, { color?: string; note?: string; bookmark?: boolean }>>('marks', {})
   const [custom] = useLS<Bible[]>('customBibles', [])
@@ -61,7 +61,7 @@ function Bible({ settings }: { settings: any }) {
   const set = (v: number, p: object) => setMarks({ ...marks, [key(v)]: { ...marks[key(v)], ...p } })
   return <div className="space-y-3">
     <div className="flex flex-wrap gap-2">
-      <select className={card} value={bible.meta.id} onChange={e => setTid(e.target.value)}>{[...idx, ...custom.map(c => ({ id: c.meta.id, name: c.meta.name + ' (imported)' }))].map((e: any) => <option key={e.id} value={e.id}>{e.name}</option>)}</select>
+
       <select className={card} value={bi} onChange={e => { setBi(+e.target.value); setCi(0) }}>{bible.books.map((b, i) => <option key={i} value={i}>{b.name}</option>)}</select>
       <select className={card} value={ci} onChange={e => setCi(+e.target.value)}>{book.chapters.map((_, i) => <option key={i} value={i}>Chapter {i + 1}</option>)}</select>
     </div>
@@ -75,22 +75,30 @@ function Bible({ settings }: { settings: any }) {
 
 function Plans({ settings }: { settings: any }) {
   const [plans, setPlans] = useState<Plan[]>([]); const [sel, setSel] = useState(''); const [open, setOpen] = useState<number | null>(null)
-  const [done, setDone] = useLS<Record<string, number[]>>('planDone', {})
+  const [items, setItems] = useLS<string[]>('planItems', [])
   const [idx, setIdx] = useState<Entry[]>([]); const [bible, setBible] = useState<Bible | null>(null); const [custom] = useLS<Bible[]>('customBibles', [])
   useEffect(() => { get<Plan[]>('plans/plans.json').then(setPlans).catch(() => {}); get<Entry[]>('bibles/index.json').then(setIdx).catch(() => {}) }, [])
   useEffect(() => { const c = custom.find(b => b.meta.id === settings.translation); if (c) { setBible(c); return } const e = idx.find(x => x.id === settings.translation) || idx[0]; if (e) get<Bible>('bibles/' + e.path).then(setBible).catch(() => setBible(null)) }, [idx, custom, settings.translation])
-  const plan = plans.find(p => p.id === sel); const dn = plan ? done[plan.id] || [] : []
   const refOf = (r: PRead) => `${r.book} ${r.from}${r.vFrom ? ':' + r.vFrom + (r.vTo && r.vTo > r.vFrom ? '–' + r.vTo : '') : r.to > r.from ? '–' + r.to : ''}`
   const reads = (r: PDay): PRead[] => [r as PRead, ...(r.more || [])].filter(x => x.book)
-  const reading = (r: PRead) => { const bk = bible?.books.find(b => b.name.toLowerCase() === r.book.toLowerCase()); if (!bk) return <p className="text-sm">"{r.book}" is not in the selected Bible yet.</p>
-    if (r.vFrom) return <div><h4 className="font-semibold">{refOf(r)}</h4>{(bk.chapters[r.from - 1] || []).slice(r.vFrom - 1, r.vTo || r.vFrom).map((t, v) => <p key={v}><sup>{r.vFrom! + v}</sup> {t}</p>)}</div>
-    return <>{Array.from({ length: Math.max(r.to, r.from) - r.from + 1 }, (_, k) => r.from + k).map(c => <div key={c}><h4 className="font-semibold">{r.book} {c}</h4>{(bk.chapters[c - 1] || []).map((t, v) => <p key={v}><sup>{v + 1}</sup> {t}</p>)}</div>)}</> }
-  if (!plan) return <div className="space-y-3"><h2 className="font-bold">Reading plans</h2>{!plans.length && <p>No plans yet.</p>}{plans.map(p => <button key={p.id} className={card + ' block w-full text-left'} onClick={() => { setSel(p.id); setOpen(null) }}>{p.title}<span className="block text-xs opacity-70">{p.days.length} days · {(done[p.id] || []).length} done</span></button>)}</div>
-  const next = plan.days.findIndex((_, i) => !dn.includes(i))
-  return <div className="space-y-3"><button className="text-sm underline" onClick={() => setSel('')}>← All plans</button><h2 className="font-bold">{plan.title}</h2><p className="text-sm">{dn.length} of {plan.days.length} days done</p>
-    {plan.days.map((r, i) => <div key={i} className={card}><div className="flex items-center gap-2"><input type="checkbox" checked={dn.includes(i)} onChange={e => setDone({ ...done, [plan.id]: e.target.checked ? [...dn, i] : dn.filter(x => x !== i) })} />
-      <button className="flex-1 text-left" onClick={() => setOpen(open === i ? null : i)}>Day {i + 1}: {r.title || reads(r).map(refOf).join(', ')}{r.title && reads(r).length ? ' · ' + reads(r).map(refOf).join(', ') : ''}{i === next ? ' ← next' : ''}</button></div>
-      {open === i && <div style={{ fontSize: settings.font }} className="mt-2 space-y-2">{r.body && <div><h3 className="font-bold sd-gold">Devotion</h3><p className="whitespace-pre-wrap">{r.body}</p></div>}{reads(r).length > 0 && <div className="space-y-2"><h3 className="font-bold sd-gold">Today's reading</h3>{reads(r).map((x, k) => <div key={k}>{reading(x)}</div>)}</div>}</div>}</div>)}</div>
+  const reading = (r: PRead) => { const bk = bible?.books.find(b => b.name.toLowerCase() === r.book.toLowerCase()); if (!bk) return <p className="text-sm">"{r.book}" is not in the selected Bible.</p>
+    if (r.vFrom) return <div>{(bk.chapters[r.from - 1] || []).slice(r.vFrom - 1, r.vTo || r.vFrom).map((t, v) => <p key={v}><sup>{r.vFrom! + v}</sup> {t}</p>)}</div>
+    return <>{Array.from({ length: Math.max(r.to, r.from) - r.from + 1 }, (_, k) => r.from + k).map(c => <div key={c}>{r.to > r.from && <h4 className="font-semibold">{r.book} {c}</h4>}{(bk.chapters[c - 1] || []).map((t, v) => <p key={v}><sup>{v + 1}</sup> {t}</p>)}</div>)}</> }
+  const has = (k: string) => items.includes(k)
+  const tick = (k: string) => setItems(has(k) ? items.filter(x => x !== k) : [...items, k])
+  const keysOf = (p: Plan, i: number) => { const d = p.days[i]; const ks: string[] = []; if (d.body) ks.push(`${p.id}|${i}|d`); reads(d).forEach((_, k) => ks.push(`${p.id}|${i}|r${k}`)); return ks }
+  const dayDone = (p: Plan, i: number) => { const ks = keysOf(p, i); return ks.length > 0 && ks.every(has) }
+  const plan = plans.find(p => p.id === sel)
+  const bar = (n: number, t: number) => <span className="block h-1 mt-2 rounded bg-white/10"><span className="block h-1 rounded" style={{ width: `${t ? n * 100 / t : 0}%`, background: 'var(--gold)' }} /></span>
+  if (!plan) return <div className="space-y-3"><h2 className="font-bold">Reading plans</h2>{!plans.length && <p>No plans yet.</p>}{plans.map(p => { const n = p.days.filter((_, i) => dayDone(p, i)).length
+    return <button key={p.id} className={card + ' block w-full text-left'} onClick={() => { setSel(p.id); const nx = p.days.findIndex((_, i) => !dayDone(p, i)); setOpen(nx < 0 ? 0 : nx) }}>{p.title}<span className="block text-xs opacity-70">{n} of {p.days.length} days done</span>{bar(n, p.days.length)}</button> })}</div>
+  const nDone = plan.days.filter((_, i) => dayDone(plan, i)).length
+  return <div className="space-y-3"><button className="text-sm underline" onClick={() => setSel('')}>← All plans</button><h2 className="font-bold">{plan.title}</h2><div className="text-xs opacity-70">{nDone} of {plan.days.length} days done{bar(nDone, plan.days.length)}</div>
+    {plan.days.map((r, i) => { const ks = keysOf(plan, i); const got = ks.filter(has).length
+      return <div key={i} className={card}><button className="w-full flex justify-between gap-2 text-left" onClick={() => setOpen(open === i ? null : i)}><span>{ks.length > 0 && got === ks.length ? '✓ ' : ''}Day {i + 1}: {r.title || reads(r).map(refOf).join(', ')}</span><span className="text-xs opacity-70 whitespace-nowrap">{got}/{ks.length}</span></button>
+        {open === i && <div style={{ fontSize: settings.font }} className="mt-3 space-y-4">
+          {r.body && <section><label className="flex items-center gap-2 font-bold sd-gold"><input type="checkbox" checked={has(`${plan.id}|${i}|d`)} onChange={() => tick(`${plan.id}|${i}|d`)} />Devotion</label><p className="whitespace-pre-wrap mt-1">{r.body}</p></section>}
+          {reads(r).map((x, k) => <section key={k}><label className="flex items-center gap-2 font-bold sd-gold"><input type="checkbox" checked={has(`${plan.id}|${i}|r${k}`)} onChange={() => tick(`${plan.id}|${i}|r${k}`)} />{refOf(x)}</label><div className="mt-1 space-y-1">{reading(x)}</div></section>)}</div>}</div> })}</div>
 }
 
 function PlanAdmin() {
@@ -179,7 +187,9 @@ function Admin() {
 
 export default function App() {
   const route = useHash(); const [name, setName] = useLS('name', ''); const [settings, setSettings] = useLS('settings', { translation: 'sample', font: 18, dark: false })
-  const [verse, setVerse] = useState<{ ref: string; text: string } | null>(null); const [theme, setTheme] = useState<any>({}); const [hi, setHi] = useState(0)
+  const [verse, setVerse] = useState<{ ref: string; text: string } | null>(null); const [theme, setTheme] = useState<any>({}); const [hi, setHi] = useState(0); const [bl, setBl] = useState<Entry[]>([]); const [cb2] = useLS<Bible[]>('customBibles', [])
+  useEffect(() => { get<Entry[]>('bibles/index.json').then(setBl).catch(() => {}) }, [])
+  const opts = [...bl.map(b => ({ id: b.id, name: b.name })), ...cb2.map(c => ({ id: c.meta.id, name: c.meta.name }))]
   const heroList: string[] = ([] as string[]).concat(theme.hero || []); const heroSrc = heroList.length ? heroList[hi % heroList.length] : ''
   useEffect(() => { if (heroList.length < 2) return; const t = setInterval(() => setHi(x => x + 1), 6000); return () => clearInterval(t) }, [heroList.length])
   useEffect(() => { get<any>('theme.json').then(t => { setTheme(t); const r = document.documentElement.style; if (t.gold) r.setProperty('--gold', t.gold); if (t.bg) r.setProperty('--bg', t.bg) }).catch(() => {}) }, [])
@@ -191,6 +201,7 @@ export default function App() {
   return <div className="min-h-screen"><div className="max-w-2xl mx-auto p-4 space-y-4">
     <header className="flex justify-between items-center"><h1 className="text-xl font-bold sd-gold flex items-center gap-2"><img src={B + 'icons/icon.png'} alt="" className="w-9 h-9 rounded-xl glow" />{theme.appName || 'Salem Daily'}</h1>
       <nav className="flex flex-wrap justify-end gap-x-3 text-sm">{[['', 'Home'], ['bible', 'Bible'], ['devotions', 'Devotions'], ['plans', 'Plans'], ['saved', 'Saved'], ['settings', 'Settings']].map(([r, l]) => <a key={r} href={'#/' + r} className={tab === r ? 'font-bold underline' : ''}>{l}</a>)}</nav></header>
+    {(tab === 'bible' || tab === 'plans') && opts.length > 1 && <select className="w-full text-sm rounded-lg px-2 py-1" value={opts.some(o => o.id === settings.translation) ? settings.translation : opts[0].id} onChange={e => setSettings({ ...settings, translation: e.target.value })}>{opts.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}</select>}
     {tab === '' && <div className="space-y-3">{heroSrc && <div className="overflow-hidden rounded-2xl"><img key={heroSrc} src={B + heroSrc} alt="" className="w-full max-h-64 object-cover kenburns rise" onError={e => (e.currentTarget.style.display = 'none')} /></div>}<h2 className="text-lg rise">Hello, {name}</h2>{theme.tagline && <p className="text-sm opacity-70">{theme.tagline}</p>}{verse && <blockquote className={card + ' rise'} style={{ animationDelay: '.3s' }}>{verse.text}<footer className="text-sm opacity-70">— {verse.ref}</footer></blockquote>}</div>}
     {tab === 'bible' && <Bible settings={settings} />}
     {tab === 'devotions' && <Devotions />}
