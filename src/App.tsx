@@ -217,7 +217,7 @@ function SettingsPage({ name, setName, settings, setSettings, opts, restore }: a
       <label className="block text-sm">Restore backup <input type="file" accept=".json" onChange={e => e.target.files?.[0] && restore(e.target.files[0])} /></label>
       <div className="flex gap-2 flex-wrap"><button className="sd-chip" onClick={() => { if (confirm('Reset all plan progress?')) { localStorage.removeItem('sd:planItems'); location.reload() } }}>Reset plan progress</button>
       <button className="sd-chip" onClick={() => { if (confirm('Erase ALL your saved data on this device?')) { Object.keys(localStorage).filter(k => k.startsWith('sd:')).forEach(k => localStorage.removeItem(k)); location.reload() } }}>Erase all my data</button></div></div>
-    <p className="text-xs opacity-60 text-center">Salem Daily · the app updates itself whenever new content is published.</p></div>
+    <div className="text-center space-y-2"><button className="sd-chip" onClick={async () => { const rs = await navigator.serviceWorker?.getRegistrations(); await Promise.all((rs || []).map(r => r.unregister())); const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); location.reload() }}>↻ Get the latest version now</button><p className="text-xs opacity-60">Salem Daily · the app updates itself whenever new content is published.</p></div></div>
 }
 
 export default function App() {
