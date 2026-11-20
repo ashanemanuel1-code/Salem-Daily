@@ -34,13 +34,18 @@ const ICONS: Record<string, string> = {
 const LANGCODE: Record<string, string> = { english: 'en-US', tamil: 'ta-IN', sinhala: 'si-LK' }
 const canSpeak = typeof window !== 'undefined' && 'speechSynthesis' in window
 let tk = 0
-const stopSpeak = () => { tk++; if (canSpeak) speechSynthesis.cancel() }
-const speak = (texts: string[], language: string, rate: number, onIdx?: (i: number) => void, onDone?: () => void) => {
-  if (!canSpeak || !texts.length) return
+let ntts: any
+const nativeTTS = () => { const c = (window as any).Capacitor; if (!c?.isNativePlatform?.()) return null; if (!ntts) ntts = c.registerPlugin('TextToSpeech'); return ntts }
+const stopSpeak = () => { tk++; Promise.resolve(nativeTTS()?.stop?.()).catch(() => {}); if (canSpeak) speechSynthesis.cancel() }
+const speak = (texts: string[], language: string, rate: number, onIdx?: (i: number) => void, onDone?: () => void, onFail?: () => void) => {
+  if (!texts.length) return
   stopSpeak(); const my = ++tk
   const lang = LANGCODE[language.toLowerCase()] || 'en-US'
+  const nt = nativeTTS()
+  if (nt) { (async () => { for (let i = 0; i < texts.length; i++) { if (my !== tk) return; onIdx?.(i); try { await nt.speak({ text: texts[i], lang, rate, pitch: 1, volume: 1, category: 'ambient' }) } catch { if (my === tk) onFail?.(); return } } if (my === tk) onDone?.() })(); return }
+  if (!canSpeak) { onFail?.(); return }
   const voice = speechSynthesis.getVoices().find(v => v.lang.replace('_', '-').toLowerCase().startsWith(lang.slice(0, 2)))
-  texts.forEach((t, i) => { const u = new SpeechSynthesisUtterance(t); u.lang = lang; u.rate = rate; if (voice) u.voice = voice; u.onstart = () => { if (my === tk) onIdx?.(i) }; if (i === texts.length - 1) u.onend = () => { if (my === tk) onDone?.() }; speechSynthesis.speak(u) })
+  texts.forEach((t, i) => { const u = new SpeechSynthesisUtterance(t); u.lang = lang; u.rate = rate; if (voice) u.voice = voice; u.onstart = () => { if (my === tk) onIdx?.(i) }; u.onerror = e => { if (my === tk && e.error !== 'interrupted' && e.error !== 'canceled') onFail?.() }; if (i === texts.length - 1) u.onend = () => { if (my === tk) onDone?.() }; speechSynthesis.speak(u) })
 }
 const BOOK_LIST = Object.values(NAMES)
 const parseUsfx = (xml: string): { books: Bible['books'] } | string => {
@@ -91,7 +96,7 @@ function Bible({ settings, setSettings, opts }: { settings: any; setSettings: an
   const [rate, setRate] = useLS<number>('ttsRate', 1); const [auto, setAuto] = useLS<boolean>('ttsAuto', false)
   const stop = () => { stopSpeak(); setPlaying(false); setCur(-1) }
   const advance = () => { if (!bible) return; const b = bible.books[bi]; if (ci + 1 < b.chapters.length) { setCi(ci + 1); setResume(true) } else if (bi + 1 < bible.books.length) { setBi(bi + 1); setCi(0); setResume(true) } }
-  const startReading = (vs: string[]) => { if (!bible) return; setPlaying(true); speak(vs, bible.meta.language, rate, setCur, () => { setCur(-1); setPlaying(false); if (auto) advance() }) }
+  const startReading = (vs: string[]) => { if (!bible) return; setPlaying(true); speak(vs, bible.meta.language, rate, setCur, () => { setCur(-1); setPlaying(false); if (auto) advance() }, () => { setCur(-1); setPlaying(false); alert('Could not play the voice. Check that a ' + bible.meta.language + ' voice is installed in your phone settings (Text-to-speech).') }) }
   useEffect(() => { if (!resume || !bible) return; setResume(false); startReading(bible.books[bi]?.chapters[ci] || []) }, [resume])
   useEffect(() => () => stopSpeak(), [])
   useEffect(() => { if (!bible) return; const g = ls<any>('goto', null); if (g) { const k = bible.books.findIndex(b => b.name === g.book); if (k >= 0) { setBi(k); setCi(g.ch - 1) } localStorage.removeItem('sd:goto') } }, [bible])
@@ -134,7 +139,7 @@ function Plans({ settings }: { settings: any }) {
     if (r.vFrom) return <div>{(bk.chapters[r.from - 1] || []).slice(r.vFrom - 1, r.vTo || r.vFrom).map((t, v) => <p key={v}><sup>{r.vFrom! + v}</sup> {t}</p>)}</div>
     return <>{Array.from({ length: Math.max(r.to, r.from) - r.from + 1 }, (_, k) => r.from + k).map(c => <div key={c}>{r.to > r.from && <h4 className="font-semibold">{r.book} {c}</h4>}{(bk.chapters[c - 1] || []).map((t, v) => <p key={v}><sup>{v + 1}</sup> {t}</p>)}</div>)}</> }
   const textsOf = (r: PRead): string[] => { const bk = bible?.books.find(b => b.name.toLowerCase() === r.book.toLowerCase()); if (!bk) return []; if (r.vFrom) return (bk.chapters[r.from - 1] || []).slice(r.vFrom - 1, r.vTo || r.vFrom); return Array.from({ length: Math.max(r.to, r.from) - r.from + 1 }, (_, k) => r.from + k).flatMap(c => bk.chapters[c - 1] || []) }
-  const speakDay = (r: PDay, key: string) => { if (talk === key) { stopSpeak(); setTalk(''); return } const texts = [r.title || '', r.body || '', ...reads(r).flatMap(textsOf)].filter(Boolean); setTalk(key); speak(texts, bible?.meta.language || 'english', rate, undefined, () => setTalk('')) }
+  const speakDay = (r: PDay, key: string) => { if (talk === key) { stopSpeak(); setTalk(''); return } const texts = [r.title || '', r.body || '', ...reads(r).flatMap(textsOf)].filter(Boolean); setTalk(key); speak(texts, bible?.meta.language || 'english', rate, undefined, () => setTalk(''), () => { setTalk(''); alert('Could not play the voice. Check that a voice for this language is installed in your phone settings (Text-to-speech).') }) }
   const has = (k: string) => items.includes(k)
   const tick = (k: string) => setItems(has(k) ? items.filter(x => x !== k) : [...items, k])
   const keysOf = (p: Plan, i: number) => { const d = p.days[i]; const ks: string[] = []; if (d.body) ks.push(`${p.id}|${i}|d`); reads(d).forEach((_, k) => ks.push(`${p.id}|${i}|r${k}`)); return ks }
