@@ -39,7 +39,7 @@ const canSpeak = typeof window !== 'undefined' && 'speechSynthesis' in window
 let tk = 0
 let ntts: any
 let nActive = false
-const nativeTTS = () => { const c = (window as any).Capacitor; if (!c?.isNativePlatform?.()) return null; if (!ntts) ntts = c.registerPlugin('TextToSpeech'); return ntts }
+const nativeTTS = () => { try { const c = (window as any).Capacitor; if (!c?.isNativePlatform?.()) return null; if (c.Plugins?.TextToSpeech) return c.Plugins.TextToSpeech; if (typeof c.registerPlugin === 'function') { if (!ntts) ntts = c.registerPlugin('TextToSpeech'); return ntts } } catch { /* no native voice */ } return null }
 const speechOK = () => canSpeak || !!nativeTTS()
 const langOf = (t: string) => /[\u0B80-\u0BFF]/.test(t) ? 'tamil' : /[\u0D80-\u0DFF]/.test(t) ? 'sinhala' : 'english'
 const stopSpeak = () => { tk++; if (nActive) { nActive = false; Promise.resolve(nativeTTS()?.stop?.()).catch(() => {}) } if (canSpeak) speechSynthesis.cancel() }
