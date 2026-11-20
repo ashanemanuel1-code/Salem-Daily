@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 const B = import.meta.env.BASE_URL
 const get = async <T,>(p: string): Promise<T> => { const r = await fetch(B + 'data/' + p); if (!r.ok) throw new Error(p); return r.json() }
 const ls = <T,>(k: string, d: T): T => { try { const v = localStorage.getItem('sd:' + k); return v ? JSON.parse(v) : d } catch { return d } }
@@ -56,7 +57,7 @@ const card = 'sd-card'
 const btn = 'sd-btn'
 
 function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
-  return <><div className="sheet-back" onClick={onClose} /><div className="sheet"><div className="mx-auto mb-3 h-1 w-10 rounded-full bg-white/30" /><h3 className="sd-gold font-bold mb-3">{title}</h3>{children}</div></>
+  return createPortal(<><div className="sheet-back" onClick={onClose} /><div className="sheet"><div className="mx-auto mb-3 h-1 w-10 rounded-full bg-white/30" /><h3 className="sd-gold font-bold mb-3">{title}</h3>{children}</div></>, document.body)
 }
 
 function BiblePicker({ opts, settings, setSettings, block }: any) {
@@ -69,7 +70,7 @@ function BiblePicker({ opts, settings, setSettings, block }: any) {
 
 function Bible({ settings }: { settings: any }) {
   const [idx, setIdx] = useState<Entry[]>([]); const tid: string = settings.translation; const [bible, setBible] = useState<Bible | null>(null)
-  const [pick, setPick] = useState(''); const [bi, setBi] = useState(0); const [ci, setCi] = useState(0); const [q, setQ] = useState('')
+  const [pick, setPick] = useState(''); const [sel, setSel] = useState<number | null>(null); const [bi, setBi] = useState(0); const [ci, setCi] = useState(0); const [q, setQ] = useState('')
   const [marks, setMarks] = useLS<Record<string, { color?: string; note?: string; bookmark?: boolean }>>('marks', {})
   const [custom] = useLS<Bible[]>('customBibles', [])
   useEffect(() => { get<Entry[]>('bibles/index.json').then(setIdx).catch(() => {}) }, [])
@@ -88,10 +89,14 @@ function Bible({ settings }: { settings: any }) {
     </div>
     <input className={card + ' w-full'} placeholder="Search this translation…" value={q} onChange={e => setQ(e.target.value)} />
     {hits.map((h, k) => <p key={k} className="text-sm">{h.b} {h.i + 1}:{h.v + 1} — {h.t}</p>)}
-    <div style={readerStyle(settings)} className="space-y-2">{verses.map((t, v) => { const m = marks[key(v)] || {}; return <p key={v} style={{ background: m.color }} className="rounded px-1">
-      {settings.vnums && <sup className="mr-1">{v + 1}</sup>}{t} <button title="bookmark" onClick={() => set(v, { bookmark: !m.bookmark })}>{m.bookmark ? '★' : '☆'}</button>{' '}
-      {['#fde68a', '#bbf7d0', '#bfdbfe', undefined].map((c, i) => <button key={i} onClick={() => set(v, { color: c })} className="inline-block w-3 h-3 rounded-full border ml-1" style={{ background: c || 'transparent' }} />)}
-      <button className="ml-2 text-xs" onClick={() => { const n = prompt('Note', m.note || ''); if (n !== null) set(v, { note: n }) }}>✎</button>{m.note && <em className="block text-xs opacity-70">{m.note}</em>}</p> })}</div></div>
+    <div style={readerStyle(settings)} className="space-y-2">{verses.map((t, v) => { const m = marks[key(v)] || {}; return <p key={v} onClick={() => setSel(v)} style={{ background: m.color ? m.color + '55' : undefined, cursor: 'pointer' }} className="rounded px-1 transition-colors">
+      {settings.vnums && <sup className="mr-1">{v + 1}</sup>}{t}{m.bookmark && <span className="sd-gold"> ★</span>}{m.note && <span className="opacity-70"> ✎</span>}</p> })}
+      <p className="text-xs opacity-60 pt-2">{bible.meta.name}{bible.meta.license ? ' · ' + bible.meta.license : ''}</p>
+      {sel !== null && verses[sel] !== undefined && (() => { const m = marks[key(sel)] || {}; const ref = `${book.name} ${ci + 1}:${sel + 1}`; return <Sheet title={ref} onClose={() => setSel(null)}>
+        <p className="mb-3 text-sm opacity-80">{verses[sel]}</p>
+        <div className="flex gap-3 items-center mb-3 flex-wrap">{['#fde047', '#86efac', '#7dd3fc', '#f9a8d4', '#fdba74'].map(c => <button key={c} aria-label="highlight" className="w-9 h-9 rounded-full grid place-items-center text-black text-sm" style={{ background: c }} onClick={() => set(sel, { color: m.color === c ? undefined : c })}>{m.color === c ? '✓' : ''}</button>)}{m.color && <button className="sd-chip" onClick={() => set(sel, { color: undefined })}>Remove</button>}</div>
+        <div className="flex gap-2 flex-wrap mb-3"><button className="sd-chip" onClick={() => set(sel, { bookmark: !m.bookmark })}>{m.bookmark ? '★ Bookmarked' : '☆ Bookmark'}</button><button className="sd-chip" onClick={() => navigator.clipboard?.writeText(`${ref} — ${verses[sel]}`)}>📋 Copy</button>{typeof navigator.share === 'function' && <button className="sd-chip" onClick={() => navigator.share({ text: `${ref} — ${verses[sel]}` }).catch(() => {})}>↗ Share</button>}</div>
+        <textarea className="w-full rounded-lg p-2" rows={3} placeholder="Add a note…" value={m.note || ''} onChange={e => set(sel, { note: e.target.value })} /></Sheet> })()}</div></div>
 }
 
 function Plans({ settings }: { settings: any }) {
@@ -234,6 +239,19 @@ function SettingsPage({ name, setName, settings, setSettings, opts, restore }: a
     <div className="text-center space-y-2"><button className="sd-chip" onClick={async () => { const rs = await navigator.serviceWorker?.getRegistrations(); await Promise.all((rs || []).map(r => r.unregister())); const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); location.reload() }}>↻ Get the latest version now</button><p className="text-xs opacity-60">Salem Daily · the app updates itself whenever new content is published.</p></div></div>
 }
 
+const WORDS: [string, string][] = [['FAITH','Believing without seeing'],['GRACE','Unearned favor from God'],['PRAYER','Talking with God'],['SHEPHERD','The Lord is my ...'],['PSALMS','Book of songs'],['MIRACLE','Water into wine was one'],['ANGEL','Messenger from heaven'],['DAVID','Shepherd boy who became king'],['MOSES','Led Israel out of Egypt'],['NOAH','Built an ark'],['JONAH','Swallowed by a great fish'],['SAVIOR','Jesus is our ...'],['COVENANT','A sacred promise'],['PROPHET','Speaks for God'],['DISCIPLE','Follower of Jesus'],['GENESIS','First book of the Bible'],['REVELATION','Last book of the Bible'],['MERCY','Compassion for the undeserving'],['EASTER','Celebrates the resurrection'],['BETHLEHEM','Birthplace of Jesus'],['TRUTH','The way, the ___ and the life'],['PEACE','Love, joy, ___'],['SABBATH','Day of rest'],['ESTHER','Queen who saved her people']]
+function Games() {
+  const pick = () => Math.floor(Math.random() * WORDS.length)
+  const scramble = (w: string) => { let r = w; for (let k = 0; k < 9 && r === w; k++) r = w.split('').sort(() => Math.random() - 0.5).join(''); return r }
+  const [i, setI] = useState(pick); const [sc, setSc] = useState(() => scramble(WORDS[i][0])); const [g, setG] = useState(''); const [msg, setMsg] = useState(''); const [score, setScore] = useLS<number>('gameScore', 0)
+  const next = () => { const n = pick(); setI(n); setSc(scramble(WORDS[n][0])); setG(''); setMsg('') }
+  const check = () => { if (g.trim().toUpperCase() === WORDS[i][0]) { setScore(score + 10); setMsg('✓ Correct! +10'); setTimeout(next, 900) } else setMsg('Not quite, try again') }
+  return <div className="space-y-4 text-center"><h2 className="font-bold sd-gold">Word Scramble</h2><p className="text-sm opacity-70">Score: {score}</p>
+    <div className="sd-card space-y-3"><p className="text-sm">Hint: {WORDS[i][1]}</p><div className="flex flex-wrap justify-center gap-2">{sc.split('').map((c, k) => <span key={k} className="sd-chip on text-lg">{c}</span>)}</div>
+      <input className="w-full rounded-lg px-3 py-2 text-center uppercase" value={g} onChange={e => setG(e.target.value)} onKeyDown={e => e.key === 'Enter' && check()} placeholder="Your answer" /><p className="h-5 text-sm">{msg}</p>
+      <div className="flex gap-2 justify-center"><button className="sd-btn" onClick={check}>Check</button><button className="sd-chip" onClick={next}>Skip</button></div></div></div>
+}
+
 export default function App() {
   const route = useHash(); const [name, setName] = useLS('name', ''); const [saved, setSettings] = useLS<any>('settings', {}); const settings: any = { translation: 'sample', font: 18, mode: 'dark', accent: '#d4a017', serif: false, spacing: 1.6, vnums: true, motion: true, ...saved }
   const [verse, setVerse] = useState<{ ref: string; text: string } | null>(null); const [theme, setTheme] = useState<any>({}); const [hi, setHi] = useState(0); const [bl, setBl] = useState<Entry[]>([]); const [cb2] = useLS<Bible[]>('customBibles', [])
@@ -254,11 +272,12 @@ export default function App() {
       <nav className="flex flex-wrap justify-end gap-x-3 text-sm">{[['', 'Home'], ['bible', 'Bible'], ['devotions', 'Devotions'], ['plans', 'Plans'], ['saved', 'Saved'], ['settings', 'Settings']].map(([r, l]) => <a key={r} href={'#/' + r} className={'tab' + (tab === r ? ' active' : '')} onClick={() => navigator.vibrate?.(12)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d={ICONS[r]} /></svg><span>{l}</span></a>)}</nav></header>
     {(tab === 'bible' || tab === 'plans') && opts.length > 1 && <BiblePicker opts={opts} settings={settings} setSettings={setSettings} block />}
     <div key={tab} className="rise space-y-4">
-    {tab === '' && <div className="space-y-3">{heroSrc && <div className="overflow-hidden rounded-2xl"><img key={heroSrc} src={B + heroSrc} alt="" className="w-full max-h-64 object-cover kenburns rise" onError={e => (e.currentTarget.style.display = 'none')} /></div>}<h2 className="text-lg rise">Hello, {name}</h2>{theme.tagline && <p className="text-sm opacity-70">{theme.tagline}</p>}{verse && <blockquote className={card + ' rise'} style={{ animationDelay: '.3s' }}>{verse.text}<footer className="text-sm opacity-70">— {verse.ref}</footer></blockquote>}</div>}
+    {tab === '' && <div className="space-y-3">{heroSrc && <div className="overflow-hidden rounded-2xl"><img key={heroSrc} src={B + heroSrc} alt="" className="w-full max-h-64 object-cover kenburns rise" onError={e => (e.currentTarget.style.display = 'none')} /></div>}<h2 className="text-lg rise">Hello, {name}</h2>{theme.tagline && <p className="text-sm opacity-70">{theme.tagline}</p>}{verse && <blockquote className={card + ' rise'} style={{ animationDelay: '.3s' }}>{verse.text}<footer className="text-sm opacity-70">— {verse.ref}</footer></blockquote>}<div className="grid grid-cols-2 gap-3">{[['bible', '📖', 'Read the Bible'], ['plans', '📅', 'My plans'], ['games', '🎮', 'Word game'], ['saved', '🔖', 'Saved verses']].map(([r, e, l]) => <a key={r} href={'#/' + r} className="sd-card text-center rise"><div className="text-2xl">{e}</div><div className="text-sm">{l}</div></a>)}</div></div>}
     {tab === 'bible' && <Bible settings={settings} />}
     {tab === 'devotions' && <Devotions />}
     {tab === 'plans' && <Plans settings={settings} />}
     {tab === 'saved' && <Saved />}
+    {tab === 'games' && <Games />}
     {tab === 'admin' && <Admin />}
     {tab === 'settings' && <SettingsPage name={name} setName={setName} settings={settings} setSettings={setSettings} opts={opts} restore={restore} />}
     </div>
