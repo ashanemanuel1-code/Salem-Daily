@@ -1,7 +1,28 @@
+import { Component, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App'
-createRoot(document.getElementById('root')!).render(<App />)
+
+class Boundary extends Component<{ children: ReactNode }, { err: string }> {
+  state = { err: '' }
+  static getDerivedStateFromError(e: unknown) { return { err: String((e as Error)?.message || e) } }
+  render() {
+    if (!this.state.err) return this.props.children
+    const b: React.CSSProperties = { background: '#d4a017', color: '#1a1200', borderRadius: 10, padding: '8px 16px', fontWeight: 700, margin: 6, border: 0 }
+    return <div style={{ minHeight: '100vh', background: '#0b0b0f', color: '#fdf3d0', padding: 24, textAlign: 'center', fontFamily: 'sans-serif' }}>
+      <h2 style={{ color: '#d4a017' }}>Something went wrong on this page</h2>
+      <p>Your data is safe. Please try again.</p>
+      <button style={b} onClick={() => { location.hash = '#/'; this.setState({ err: '' }) }}>Go to Home</button>
+      <button style={b} onClick={() => location.reload()}>Reload</button>
+      <p style={{ fontSize: 11, opacity: 0.6, marginTop: 24 }}>{this.state.err}</p>
+    </div>
+  }
+}
+
+const banner = (msg: string) => { let d = document.getElementById('errbar'); if (!d) { d = document.createElement('div'); d.id = 'errbar'; d.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:99;background:#7f1d1d;color:#fff;font:12px sans-serif;padding:6px 10px'; d.onclick = () => d!.remove(); document.body.appendChild(d) } d.textContent = 'Error: ' + msg + ' (tap to close)' }
+addEventListener('error', e => banner(e.message))
+addEventListener('unhandledrejection', e => banner(String((e.reason && e.reason.message) || e.reason)))
+createRoot(document.getElementById('root')!).render(<Boundary><App /></Boundary>)
 if ('serviceWorker' in navigator) {
   const had = !!navigator.serviceWorker.controller; let busy = false
   navigator.serviceWorker.addEventListener('controllerchange', () => { if (had && !busy) { busy = true; location.reload() } })

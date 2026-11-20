@@ -2,6 +2,9 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 const B = import.meta.env.BASE_URL
 const get = async <T,>(p: string): Promise<T> => { const r = await fetch(B + 'data/' + p); if (!r.ok) throw new Error(p); return r.json() }
+const bibleCache = new Map<string, Promise<Bible>>()
+const loadBible = (path: string) => { let p = bibleCache.get(path); if (!p) { p = get<Bible>('bibles/' + path); p.catch(() => bibleCache.delete(path)); bibleCache.set(path, p) } return p }
+const arr = (f: any) => (j: unknown) => f(Array.isArray(j) ? j : [])
 const ls = <T,>(k: string, d: T): T => { try { const v = localStorage.getItem('sd:' + k); return v ? JSON.parse(v) : d } catch { return d } }
 const useLS = <T,>(k: string, d: T) => { const [v, s] = useState<T>(() => ls(k, d)); useEffect(() => { try { localStorage.setItem('sd:' + k, JSON.stringify(v)) } catch { /* storage full */ } }, [k, v]); return [v, s] as const }
 const save = (name: string, data: unknown) => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })); a.download = name; a.click() }
@@ -35,17 +38,18 @@ const LANGCODE: Record<string, string> = { english: 'en-US', tamil: 'ta-IN', sin
 const canSpeak = typeof window !== 'undefined' && 'speechSynthesis' in window
 let tk = 0
 let ntts: any
+let nActive = false
 const nativeTTS = () => { const c = (window as any).Capacitor; if (!c?.isNativePlatform?.()) return null; if (!ntts) ntts = c.registerPlugin('TextToSpeech'); return ntts }
-const stopSpeak = () => { tk++; Promise.resolve(nativeTTS()?.stop?.()).catch(() => {}); if (canSpeak) speechSynthesis.cancel() }
-const speak = (texts: string[], language: string, rate: number, onIdx?: (i: number) => void, onDone?: () => void, onFail?: () => void) => {
+const stopSpeak = () => { tk++; if (nActive) { nActive = false; Promise.resolve(nativeTTS()?.stop?.()).catch(() => {}) } if (canSpeak) speechSynthesis.cancel() }
+const speak = (texts: string[], language: string, rate: number, onIdx?: (i: number) => void, onDone?: () => void, onFail?: (m?: string) => void) => {
   if (!texts.length) return
   stopSpeak(); const my = ++tk
   const lang = LANGCODE[language.toLowerCase()] || 'en-US'
   const nt = nativeTTS()
-  if (nt) { (async () => { for (let i = 0; i < texts.length; i++) { if (my !== tk) return; onIdx?.(i); try { await nt.speak({ text: texts[i], lang, rate, pitch: 1, volume: 1, category: 'ambient' }) } catch { if (my === tk) onFail?.(); return } } if (my === tk) onDone?.() })(); return }
-  if (!canSpeak) { onFail?.(); return }
+  if (nt) { nActive = true; (async () => { for (let i = 0; i < texts.length; i++) { if (my !== tk) return; onIdx?.(i); try { await nt.speak({ text: texts[i], lang, rate, pitch: 1, volume: 1, category: 'ambient' }) } catch (e: any) { if (my === tk) { nActive = false; onFail?.(String(e?.message || e)) } return } } nActive = false; if (my === tk) onDone?.() })(); return }
+  if (!canSpeak) { onFail?.('no speech engine'); return }
   const voice = speechSynthesis.getVoices().find(v => v.lang.replace('_', '-').toLowerCase().startsWith(lang.slice(0, 2)))
-  texts.forEach((t, i) => { const u = new SpeechSynthesisUtterance(t); u.lang = lang; u.rate = rate; if (voice) u.voice = voice; u.onstart = () => { if (my === tk) onIdx?.(i) }; u.onerror = e => { if (my === tk && e.error !== 'interrupted' && e.error !== 'canceled') onFail?.() }; if (i === texts.length - 1) u.onend = () => { if (my === tk) onDone?.() }; speechSynthesis.speak(u) })
+  texts.forEach((t, i) => { const u = new SpeechSynthesisUtterance(t); u.lang = lang; u.rate = rate; if (voice) u.voice = voice; u.onstart = () => { if (my === tk) onIdx?.(i) }; u.onerror = e => { if (my === tk && e.error !== 'interrupted' && e.error !== 'canceled') onFail?.(e.error) }; if (i === texts.length - 1) u.onend = () => { if (my === tk) onDone?.() }; speechSynthesis.speak(u) })
 }
 const BOOK_LIST = Object.values(NAMES)
 const parseUsfx = (xml: string): { books: Bible['books'] } | string => {
@@ -90,13 +94,13 @@ function Bible({ settings, setSettings, opts }: { settings: any; setSettings: an
   const [pick, setPick] = useState(''); const [sel, setSel] = useState<number | null>(null); const [bi, setBi] = useState(0); const [ci, setCi] = useState(0); const [q, setQ] = useState('')
   const [marks, setMarks] = useLS<Record<string, { color?: string; note?: string; bookmark?: boolean }>>('marks', {})
   const [custom] = useLS<Bible[]>('customBibles', [])
-  useEffect(() => { get<Entry[]>('bibles/index.json').then(setIdx).catch(() => {}) }, [])
-  useEffect(() => { const c = custom.find(b => b.meta.id === tid); if (c) return setBible(c); const e = idx.find(x => x.id === tid) || idx[0]; if (e) get<Bible>('bibles/' + e.path).then(setBible).catch(() => setBible(null)) }, [tid, idx, custom])
+  useEffect(() => { get<Entry[]>('bibles/index.json').then(arr(setIdx)).catch(() => {}) }, [])
+  useEffect(() => { const c = custom.find(b => b.meta.id === tid); if (c) return setBible(c); const e = idx.find(x => x.id === tid) || idx[0]; if (e) loadBible(e.path).then(setBible).catch(() => setBible(null)) }, [tid, idx, custom])
   const [playing, setPlaying] = useState(false); const [cur, setCur] = useState(-1); const [resume, setResume] = useState(false)
   const [rate, setRate] = useLS<number>('ttsRate', 1); const [auto, setAuto] = useLS<boolean>('ttsAuto', false)
   const stop = () => { stopSpeak(); setPlaying(false); setCur(-1) }
   const advance = () => { if (!bible) return; const b = bible.books[bi]; if (ci + 1 < b.chapters.length) { setCi(ci + 1); setResume(true) } else if (bi + 1 < bible.books.length) { setBi(bi + 1); setCi(0); setResume(true) } }
-  const startReading = (vs: string[]) => { if (!bible) return; setPlaying(true); speak(vs, bible.meta.language, rate, setCur, () => { setCur(-1); setPlaying(false); if (auto) advance() }, () => { setCur(-1); setPlaying(false); alert('Could not play the voice. Check that a ' + bible.meta.language + ' voice is installed in your phone settings (Text-to-speech).') }) }
+  const startReading = (vs: string[]) => { if (!bible) return; setPlaying(true); speak(vs, bible.meta.language, rate, setCur, () => { setCur(-1); setPlaying(false); if (auto) advance() }, (m) => { setCur(-1); setPlaying(false); alert('Could not play the voice (' + (m || 'unknown') + '). Check that a ' + bible.meta.language + ' voice is installed in your phone settings (Text-to-speech).') }) }
   useEffect(() => { if (!resume || !bible) return; setResume(false); startReading(bible.books[bi]?.chapters[ci] || []) }, [resume])
   useEffect(() => () => stopSpeak(), [])
   useEffect(() => { if (!bible) return; const g = ls<any>('goto', null); if (g) { const k = bible.books.findIndex(b => b.name === g.book); if (k >= 0) { setBi(k); setCi(g.ch - 1) } localStorage.removeItem('sd:goto') } }, [bible])
@@ -114,7 +118,7 @@ function Bible({ settings, setSettings, opts }: { settings: any; setSettings: an
     </div>
     <input className={card + ' w-full'} placeholder="Search this translation…" value={q} onChange={e => setQ(e.target.value)} />
     {hits.map((h, k) => <p key={k} className="text-sm">{h.b} {h.i + 1}:{h.v + 1} — {h.t}</p>)}
-    {canSpeak && <div className="flex flex-wrap items-center gap-2"><button className="sd-btn" onClick={playing ? stop : play}>{playing ? '■ Stop' : '▶ Listen'}</button>{[0.8, 1, 1.25].map(r => <button key={r} className={'sd-chip' + (rate === r ? ' on' : '')} onClick={() => setRate(r)}>{r}×</button>)}<label className="text-xs flex items-center gap-1"><input type="checkbox" checked={auto} onChange={e => setAuto(e.target.checked)} />Next chapter</label></div>}
+    {canSpeak && <div className="flex flex-wrap items-center gap-2"><button className="sd-btn" onClick={playing ? stop : play}>{playing ? '■ Stop' : '▶ Listen'}</button>{[0.8, 1, 1.25].map(r => <button key={r} className={'sd-chip' + (rate === r ? ' on' : '')} onClick={() => setRate(r)}>{r}×</button>)}<label className="text-xs flex items-center gap-1"><input type="checkbox" checked={auto} onChange={e => setAuto(e.target.checked)} />Next chapter</label><span className="text-xs opacity-50">{nativeTTS() ? 'phone voice' : 'browser voice'}</span></div>}
     {canSpeak && bible.meta.language.toLowerCase() !== 'english' && <p className="text-xs opacity-60">Listening needs a {bible.meta.language} voice installed on your phone (Settings → Text-to-speech).</p>}
     <div style={readerStyle(settings)} className="space-y-2">{verses.map((t, v) => { const m = marks[key(v)] || {}; return <p key={v} ref={el => { if (el && cur === v) el.scrollIntoView({ block: 'center', behavior: 'smooth' }) }} onClick={() => setSel(v)} style={{ background: cur === v ? 'color-mix(in srgb, var(--gold) 28%, transparent)' : m.color ? m.color + '55' : undefined, cursor: 'pointer' }} className="rounded px-1 transition-colors">
       {settings.vnums && <sup className="mr-1">{v + 1}</sup>}{t}{m.bookmark && <span className="sd-gold"> ★</span>}{m.note && <span className="opacity-70"> ✎</span>}</p> })}
@@ -131,15 +135,15 @@ function Plans({ settings }: { settings: any }) {
   const [items, setItems] = useLS<string[]>('planItems', []); const [talk, setTalk] = useState(''); const [rate] = useLS<number>('ttsRate', 1)
   useEffect(() => () => stopSpeak(), [])
   const [idx, setIdx] = useState<Entry[]>([]); const [bible, setBible] = useState<Bible | null>(null); const [custom] = useLS<Bible[]>('customBibles', [])
-  useEffect(() => { get<Plan[]>('plans/plans.json').then(setPlans).catch(() => {}); get<Entry[]>('bibles/index.json').then(setIdx).catch(() => {}) }, [])
-  useEffect(() => { const c = custom.find(b => b.meta.id === settings.translation); if (c) { setBible(c); return } const e = idx.find(x => x.id === settings.translation) || idx[0]; if (e) get<Bible>('bibles/' + e.path).then(setBible).catch(() => setBible(null)) }, [idx, custom, settings.translation])
+  useEffect(() => { get<Plan[]>('plans/plans.json').then(arr(setPlans)).catch(() => {}); get<Entry[]>('bibles/index.json').then(arr(setIdx)).catch(() => {}) }, [])
+  useEffect(() => { const c = custom.find(b => b.meta.id === settings.translation); if (c) { setBible(c); return } const e = idx.find(x => x.id === settings.translation) || idx[0]; if (e) loadBible(e.path).then(setBible).catch(() => setBible(null)) }, [idx, custom, settings.translation])
   const refOf = (r: PRead) => `${r.book} ${r.from}${r.vFrom ? ':' + r.vFrom + (r.vTo && r.vTo > r.vFrom ? '–' + r.vTo : '') : r.to > r.from ? '–' + r.to : ''}`
   const reads = (r: PDay): PRead[] => [r as PRead, ...(r.more || [])].filter(x => x.book)
   const reading = (r: PRead) => { const bk = bible?.books.find(b => b.name.toLowerCase() === r.book.toLowerCase()); if (!bk) return <p className="text-sm">"{r.book}" is not in the selected Bible.</p>
     if (r.vFrom) return <div>{(bk.chapters[r.from - 1] || []).slice(r.vFrom - 1, r.vTo || r.vFrom).map((t, v) => <p key={v}><sup>{r.vFrom! + v}</sup> {t}</p>)}</div>
     return <>{Array.from({ length: Math.max(r.to, r.from) - r.from + 1 }, (_, k) => r.from + k).map(c => <div key={c}>{r.to > r.from && <h4 className="font-semibold">{r.book} {c}</h4>}{(bk.chapters[c - 1] || []).map((t, v) => <p key={v}><sup>{v + 1}</sup> {t}</p>)}</div>)}</> }
   const textsOf = (r: PRead): string[] => { const bk = bible?.books.find(b => b.name.toLowerCase() === r.book.toLowerCase()); if (!bk) return []; if (r.vFrom) return (bk.chapters[r.from - 1] || []).slice(r.vFrom - 1, r.vTo || r.vFrom); return Array.from({ length: Math.max(r.to, r.from) - r.from + 1 }, (_, k) => r.from + k).flatMap(c => bk.chapters[c - 1] || []) }
-  const speakDay = (r: PDay, key: string) => { if (talk === key) { stopSpeak(); setTalk(''); return } const texts = [r.title || '', r.body || '', ...reads(r).flatMap(textsOf)].filter(Boolean); setTalk(key); speak(texts, bible?.meta.language || 'english', rate, undefined, () => setTalk(''), () => { setTalk(''); alert('Could not play the voice. Check that a voice for this language is installed in your phone settings (Text-to-speech).') }) }
+  const speakDay = (r: PDay, key: string) => { if (talk === key) { stopSpeak(); setTalk(''); return } const texts = [r.title || '', r.body || '', ...reads(r).flatMap(textsOf)].filter(Boolean); setTalk(key); speak(texts, bible?.meta.language || 'english', rate, undefined, () => setTalk(''), (m) => { setTalk(''); alert('Could not play the voice (' + (m || 'unknown') + '). Check that a voice for this language is installed in your phone settings (Text-to-speech).') }) }
   const has = (k: string) => items.includes(k)
   const tick = (k: string) => setItems(has(k) ? items.filter(x => x !== k) : [...items, k])
   const keysOf = (p: Plan, i: number) => { const d = p.days[i]; const ks: string[] = []; if (d.body) ks.push(`${p.id}|${i}|d`); reads(d).forEach((_, k) => ks.push(`${p.id}|${i}|r${k}`)); return ks }
@@ -160,7 +164,7 @@ function Plans({ settings }: { settings: any }) {
 
 function PlanAdmin() {
   const [plans, setPlans] = useLS<Plan[] | null>('draftPlans', null); const [title, setTitle] = useState('Matthew in 30 days'); const [book, setBook] = useState('Matthew'); const [ch, setCh] = useState(28); const [days, setDays] = useState(30); const [m, setM] = useState(''); const [openId, setOpenId] = useState('')
-  useEffect(() => { if (!plans) get<Plan[]>('plans/plans.json').then(setPlans).catch(() => setPlans([])) }, [])
+  useEffect(() => { if (!plans) get<Plan[]>('plans/plans.json').then(arr(setPlans)).catch(() => setPlans([])) }, [])
   if (!plans) return null
   const upPlan = (id: string, q: Partial<Plan>) => setPlans(plans.map(x => x.id === id ? { ...x, ...q } : x))
   const upDay = (id: string, i: number, q: Partial<PDay>) => setPlans(plans.map(x => x.id === id ? { ...x, days: x.days.map((d, k) => k === i ? { ...d, ...q } : d) } : x))
@@ -188,9 +192,9 @@ function PlanAdmin() {
 function Saved() {
   const [marks, setMarks] = useLS<Record<string, { color?: string; note?: string; bookmark?: boolean }>>('marks', {})
   const [idx, setIdx] = useState<Entry[]>([]); const [bibles, setBibles] = useState<Record<string, Bible>>({}); const [custom] = useLS<Bible[]>('customBibles', []); const [f, setF] = useState('all')
-  useEffect(() => { get<Entry[]>('bibles/index.json').then(setIdx).catch(() => {}) }, [])
+  useEffect(() => { get<Entry[]>('bibles/index.json').then(arr(setIdx)).catch(() => {}) }, [])
   const ids = Array.from(new Set(Object.keys(marks).map(k => k.split('|')[0])))
-  useEffect(() => { ids.forEach(id => { const c = custom.find(b => b.meta.id === id); if (c) { setBibles(o => ({ ...o, [id]: c })); return } const e = idx.find(x => x.id === id); if (e) get<Bible>('bibles/' + e.path).then(b => setBibles(o => ({ ...o, [id]: b }))).catch(() => {}) }) }, [idx, ids.join(',')])
+  useEffect(() => { ids.forEach(id => { const c = custom.find(b => b.meta.id === id); if (c) { setBibles(o => ({ ...o, [id]: c })); return } const e = idx.find(x => x.id === id); if (e) loadBible(e.path).then(b => setBibles(o => ({ ...o, [id]: b }))).catch(() => {}) }) }, [idx, ids.join(',')])
   const items = Object.entries(marks).filter(([, m]) => f === 'all' ? (m.bookmark || m.color || m.note) : f === 'bookmarks' ? m.bookmark : f === 'highlights' ? m.color : m.note)
   return <div className="space-y-3"><h2 className="font-bold">Saved</h2>
     <div className="flex gap-3 text-sm">{['all', 'bookmarks', 'highlights', 'notes'].map(t => <button key={t} className={f === t ? 'font-bold underline' : ''} onClick={() => setF(t)}>{t}</button>)}</div>
@@ -202,14 +206,14 @@ function Saved() {
 
 function Devotions() {
   const [d, setD] = useState<Devotion[]>([]); const [local] = useLS<Devotion[] | null>('draftDevotions', null)
-  useEffect(() => { get<Devotion[]>('devotions/devotions.json').then(setD).catch(() => {}) }, [])
-  return <div className="space-y-3">{d.filter(x => x.published).map(x => <article key={x.id} className={card}><h3 className="font-semibold">{x.title}</h3><p className="whitespace-pre-wrap">{x.body}</p></article>)}{local && <p className="text-xs opacity-60">Admin drafts exist on this device and are not shown to readers until published via GitHub.</p>}</div>
+  useEffect(() => { get<Devotion[]>('devotions/devotions.json').then(arr(setD)).catch(() => {}) }, [])
+  return <div className="space-y-3">{d.filter(x => x && x.published).map((x, n) => <article key={x.id || n} className={card}><h3 className="font-semibold">{x.title}</h3><p className="whitespace-pre-wrap">{x.body}</p></article>)}{local && <p className="text-xs opacity-60">Admin drafts exist on this device and are not shown to readers until published via GitHub.</p>}</div>
 }
 
 function Admin() {
   const [d, setD] = useLS<Devotion[] | null>('draftDevotions', null); const [cats, setCats] = useLS<Cat[] | null>('draftCats', null)
   const [cb, setCb] = useLS<Bible[]>('customBibles', []); const [msg, setMsg] = useState('')
-  useEffect(() => { if (!d) get<Devotion[]>('devotions/devotions.json').then(setD); if (!cats) get<Cat[]>('devotions/categories.json').then(setCats) }, [])
+  useEffect(() => { if (!d) get<Devotion[]>('devotions/devotions.json').then(arr(setD)); if (!cats) get<Cat[]>('devotions/categories.json').then(arr(setCats)) }, [])
   if (!d || !cats) return <p>Loading…</p>
   const up = (i: number, p: Partial<Devotion>) => setD(d.map((x, k) => k === i ? { ...x, ...p } : x))
   const [msg2, setMsg2] = useState('')
@@ -296,8 +300,8 @@ const parseRef = (b: Bible, q: string): Hit[] => {
 }
 function useBible(tr: string) {
   const [idx, setIdx] = useState<Entry[]>([]); const [bible, setBible] = useState<Bible | null>(null); const [custom] = useLS<Bible[]>('customBibles', [])
-  useEffect(() => { get<Entry[]>('bibles/index.json').then(setIdx).catch(() => {}) }, [])
-  useEffect(() => { const c = custom.find(b => b.meta.id === tr); if (c) { setBible(c); return } const e = idx.find(x => x.id === tr) || idx[0]; if (e) get<Bible>('bibles/' + e.path).then(setBible).catch(() => setBible(null)) }, [idx, custom, tr])
+  useEffect(() => { get<Entry[]>('bibles/index.json').then(arr(setIdx)).catch(() => {}) }, [])
+  useEffect(() => { const c = custom.find(b => b.meta.id === tr); if (c) { setBible(c); return } const e = idx.find(x => x.id === tr) || idx[0]; if (e) loadBible(e.path).then(setBible).catch(() => setBible(null)) }, [idx, custom, tr])
   return bible
 }
 const STOP = new Set(['the', 'and', 'where', 'what', 'who', 'how', 'does', 'say', 'about', 'verse', 'bible', 'find', 'for', 'with', 'that', 'this', 'from', 'are', 'was', 'can', 'you'])
@@ -339,7 +343,7 @@ function Ask({ settings, theme, opts }: any) {
 export default function App() {
   const route = useHash(); const [name, setName] = useLS('name', ''); const [saved, setSettings] = useLS<any>('settings', {}); const settings: any = { translation: 'sample', font: 18, mode: 'dark', accent: '#d4a017', serif: false, spacing: 1.6, vnums: true, motion: true, ...saved }
   const [verse, setVerse] = useState<{ ref: string; text: string } | null>(null); const [theme, setTheme] = useState<any>({}); const [hi, setHi] = useState(0); const [bl, setBl] = useState<Entry[]>([]); const [cb2] = useLS<Bible[]>('customBibles', [])
-  useEffect(() => { get<Entry[]>('bibles/index.json').then(setBl).catch(() => {}) }, [])
+  useEffect(() => { get<Entry[]>('bibles/index.json').then(arr(setBl)).catch(() => {}) }, [])
   const opts = [...bl.map(b => ({ id: b.id, name: b.name, language: b.language })), ...cb2.map(c => ({ id: c.meta.id, name: c.meta.name, language: c.meta.language }))]
   const heroList: string[] = ([] as string[]).concat(theme.hero || []); const heroSrc = heroList.length ? heroList[hi % heroList.length] : ''
   useEffect(() => { if (heroList.length < 2) return; const t = setInterval(() => setHi(x => x + 1), 6000); return () => clearInterval(t) }, [heroList.length])
@@ -353,7 +357,7 @@ export default function App() {
   const restore = async (f: File) => { try { const j = JSON.parse(await f.text()); Object.entries(j).forEach(([k, v]) => localStorage.setItem(k, v as string)); location.reload() } catch { alert('Invalid backup') } }
   return <div className="min-h-screen"><div className="max-w-2xl mx-auto p-4 space-y-4">
     <header className="flex justify-between items-center"><h1 className="text-xl font-bold sd-gold flex items-center gap-2"><img src={B + 'icons/icon.png'} alt="" className="w-9 h-9 rounded-xl glow" />{theme.appName || 'Salem Daily'}</h1>
-      <nav className="flex flex-wrap justify-end gap-x-3 text-sm">{[['', 'Home'], ['bible', 'Bible'], ['devotions', 'Devotions'], ['plans', 'Plans'], ['ask', 'Ask'], ['settings', 'Settings']].map(([r, l]) => <a key={r} href={'#/' + r} className={'tab' + (tab === r ? ' active' : '')} onClick={() => navigator.vibrate?.(12)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d={ICONS[r]} /></svg><span>{l}</span></a>)}</nav></header>
+      <nav className="flex flex-wrap justify-end gap-x-3 text-sm">{[['', 'Home'], ['bible', 'Bible'], ['devotions', 'Devotions'], ['plans', 'Plans'], ['ask', 'Ask'], ['settings', 'Settings']].map(([r, l]) => <a key={r} href={'#/' + r} className={'tab' + (tab === r ? ' active' : '')}><svg viewBox="0 0 24 24" aria-hidden="true"><path d={ICONS[r]} /></svg><span>{l}</span></a>)}</nav></header>
     {tab === 'plans' && opts.length > 1 && <BiblePicker opts={opts} settings={settings} setSettings={setSettings} block />}
     <div key={tab} className="rise space-y-4">
     {tab === '' && <div className="space-y-3">{heroSrc && <div className="overflow-hidden rounded-2xl"><img key={heroSrc} src={B + heroSrc} alt="" className="w-full max-h-64 object-cover kenburns rise" onError={e => (e.currentTarget.style.display = 'none')} /></div>}<h2 className="text-lg rise">Hello, {name}</h2>{theme.tagline && <p className="text-sm opacity-70">{theme.tagline}</p>}{verse && <blockquote className={card + ' rise'} style={{ animationDelay: '.3s' }}>{verse.text}<footer className="text-sm opacity-70">— {verse.ref}</footer></blockquote>}<div className="grid grid-cols-2 gap-3">{[['ask', '🔎', 'Ask & search'], ['bible', '📖', 'Read the Bible'], ['plans', '📅', 'My plans'], ['devotions', '🌅', 'Devotions'], ['games', '🎮', 'Word game'], ['saved', '🔖', 'Saved verses']].map(([r, e, l]) => <a key={r} href={'#/' + r} className="sd-card text-center rise"><div className="text-2xl">{e}</div><div className="text-sm">{l}</div></a>)}</div></div>}
