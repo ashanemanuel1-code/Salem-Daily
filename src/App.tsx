@@ -31,6 +31,17 @@ const ICONS: Record<string, string> = {
   ask: 'M21 21l-4.3-4.3M11 18a7 7 0 100-14 7 7 0 000 14z',
   settings: 'M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0M14 4v4M8 10v4M16 16v4',
 }
+const LANGCODE: Record<string, string> = { english: 'en-US', tamil: 'ta-IN', sinhala: 'si-LK' }
+const canSpeak = typeof window !== 'undefined' && 'speechSynthesis' in window
+let tk = 0
+const stopSpeak = () => { tk++; if (canSpeak) speechSynthesis.cancel() }
+const speak = (texts: string[], language: string, rate: number, onIdx?: (i: number) => void, onDone?: () => void) => {
+  if (!canSpeak || !texts.length) return
+  stopSpeak(); const my = ++tk
+  const lang = LANGCODE[language.toLowerCase()] || 'en-US'
+  const voice = speechSynthesis.getVoices().find(v => v.lang.replace('_', '-').toLowerCase().startsWith(lang.slice(0, 2)))
+  texts.forEach((t, i) => { const u = new SpeechSynthesisUtterance(t); u.lang = lang; u.rate = rate; if (voice) u.voice = voice; u.onstart = () => { if (my === tk) onIdx?.(i) }; if (i === texts.length - 1) u.onend = () => { if (my === tk) onDone?.() }; speechSynthesis.speak(u) })
+}
 const BOOK_LIST = Object.values(NAMES)
 const parseUsfx = (xml: string): { books: Bible['books'] } | string => {
   const doc = new DOMParser().parseFromString(xml, 'text/xml'); if (doc.querySelector('parsererror')) return 'This is not valid XML'
@@ -61,37 +72,46 @@ function Sheet({ title, onClose, children }: { title: string; onClose: () => voi
   return createPortal(<><div className="sheet-back" onClick={onClose} /><div className="sheet"><div className="mx-auto mb-3 h-1 w-10 rounded-full bg-white/30" /><h3 className="sd-gold font-bold mb-3">{title}</h3>{children}</div></>, document.body)
 }
 
-function BiblePicker({ opts, settings, setSettings, block }: any) {
+function BiblePicker({ opts, settings, setSettings, block, compact }: any) {
   const [open, setOpen] = useState(false)
   const cur = opts.find((o: any) => o.id === settings.translation) || opts[0]
   if (!cur) return null
-  return <><button className={'sd-chip flex items-center gap-2' + (block ? ' w-full justify-between' : '')} onClick={() => setOpen(true)}><span>📖 {cur.name}</span><span>▾</span></button>
+  return <>{compact ? <button className="sd-chip !px-2 !py-1 text-xs" onClick={() => setOpen(true)}>🌐 {cur.language || cur.name} ▾</button> : <button className={'sd-chip flex items-center gap-2' + (block ? ' w-full justify-between' : '')} onClick={() => setOpen(true)}><span>📖 {cur.name}</span><span>▾</span></button>}
     {open && <Sheet title="Choose a Bible" onClose={() => setOpen(false)}>{opts.map((o: any) => <button key={o.id} className={'opt' + (o.id === cur.id ? ' on' : '')} onClick={() => { setSettings({ ...settings, translation: o.id }); setOpen(false) }}>{o.name}{o.language && <span className="block text-xs opacity-70">{o.language}</span>}</button>)}</Sheet>}</>
 }
 
-function Bible({ settings }: { settings: any }) {
+function Bible({ settings, setSettings, opts }: { settings: any; setSettings: any; opts: any[] }) {
   const [idx, setIdx] = useState<Entry[]>([]); const tid: string = settings.translation; const [bible, setBible] = useState<Bible | null>(null)
   const [pick, setPick] = useState(''); const [sel, setSel] = useState<number | null>(null); const [bi, setBi] = useState(0); const [ci, setCi] = useState(0); const [q, setQ] = useState('')
   const [marks, setMarks] = useLS<Record<string, { color?: string; note?: string; bookmark?: boolean }>>('marks', {})
   const [custom] = useLS<Bible[]>('customBibles', [])
   useEffect(() => { get<Entry[]>('bibles/index.json').then(setIdx).catch(() => {}) }, [])
   useEffect(() => { const c = custom.find(b => b.meta.id === tid); if (c) return setBible(c); const e = idx.find(x => x.id === tid) || idx[0]; if (e) get<Bible>('bibles/' + e.path).then(setBible).catch(() => setBible(null)) }, [tid, idx, custom])
+  const [playing, setPlaying] = useState(false); const [cur, setCur] = useState(-1); const [resume, setResume] = useState(false)
+  const [rate, setRate] = useLS<number>('ttsRate', 1); const [auto, setAuto] = useLS<boolean>('ttsAuto', false)
+  const stop = () => { stopSpeak(); setPlaying(false); setCur(-1) }
+  const advance = () => { if (!bible) return; const b = bible.books[bi]; if (ci + 1 < b.chapters.length) { setCi(ci + 1); setResume(true) } else if (bi + 1 < bible.books.length) { setBi(bi + 1); setCi(0); setResume(true) } }
+  const startReading = (vs: string[]) => { if (!bible) return; setPlaying(true); speak(vs, bible.meta.language, rate, setCur, () => { setCur(-1); setPlaying(false); if (auto) advance() }) }
+  useEffect(() => { if (!resume || !bible) return; setResume(false); startReading(bible.books[bi]?.chapters[ci] || []) }, [resume])
+  useEffect(() => () => stopSpeak(), [])
   useEffect(() => { if (!bible) return; const g = ls<any>('goto', null); if (g) { const k = bible.books.findIndex(b => b.name === g.book); if (k >= 0) { setBi(k); setCi(g.ch - 1) } localStorage.removeItem('sd:goto') } }, [bible])
   if (!bible) return <p>Loading Bible… (no translation available yet — import one in Admin)</p>
-  const book = bible.books[bi] ?? bible.books[0]; const verses = book.chapters[ci] ?? []
+  const book = bible.books[bi] ?? bible.books[0]; const verses = book.chapters[ci] ?? []; const play = () => startReading(verses)
   const hits = q.length > 2 ? bible.books.flatMap(b => b.chapters.flatMap((c, i) => c.map((t, v) => ({ b: b.name, i, v, t })))).filter(x => x.t.toLowerCase().includes(q.toLowerCase())).slice(0, 30) : []
   const key = (v: number) => `${bible.meta.id}|${book.name}|${ci}|${v}`
   const set = (v: number, p: object) => setMarks({ ...marks, [key(v)]: { ...marks[key(v)], ...p } })
   return <div className="space-y-3">
     <div className="flex flex-wrap gap-2">
 
-      <button className="sd-chip" onClick={() => setPick('book')}>{book.name} ▾</button><button className="sd-chip" onClick={() => setPick('ch')}>Chapter {ci + 1} ▾</button>
-      {pick === 'book' && <Sheet title="Choose a book" onClose={() => setPick('')}>{(bible.books.length === 66 ? [['Old Testament', 0, 39], ['New Testament', 39, 66]] : [['Books', 0, bible.books.length]]).map(([t, a, z]: any) => <div key={t}><h4 className="text-xs uppercase opacity-60 mb-2">{t}</h4><div className="grid grid-cols-2 gap-2 mb-4">{bible.books.slice(a, z).map((b, k) => <button key={a + k} className={'opt !mb-0' + (a + k === bi ? ' on' : '')} onClick={() => { setBi(a + k); setCi(0); setPick('') }}>{b.name}</button>)}</div></div>)}</Sheet>}
-      {pick === 'ch' && <Sheet title={book.name} onClose={() => setPick('')}><div className="grid grid-cols-5 gap-2">{book.chapters.map((_, i) => <button key={i} className={'opt !mb-0 text-center' + (i === ci ? ' on' : '')} onClick={() => { setCi(i); setPick('') }}>{i + 1}</button>)}</div></Sheet>}
+      <button className="sd-chip" onClick={() => setPick('book')}>{book.name} ▾</button><button className="sd-chip" onClick={() => setPick('ch')}>Chapter {ci + 1} ▾</button><span className="ml-auto"><BiblePicker compact opts={opts} settings={settings} setSettings={setSettings} /></span>
+      {pick === 'book' && <Sheet title="Choose a book" onClose={() => setPick('')}>{(bible.books.length === 66 ? [['Old Testament', 0, 39], ['New Testament', 39, 66]] : [['Books', 0, bible.books.length]]).map(([t, a, z]: any) => <div key={t}><h4 className="text-xs uppercase opacity-60 mb-2">{t}</h4><div className="grid grid-cols-2 gap-2 mb-4">{bible.books.slice(a, z).map((b, k) => <button key={a + k} className={'opt !mb-0' + (a + k === bi ? ' on' : '')} onClick={() => { stop(); setBi(a + k); setCi(0); setPick('') }}>{b.name}</button>)}</div></div>)}</Sheet>}
+      {pick === 'ch' && <Sheet title={book.name} onClose={() => setPick('')}><div className="grid grid-cols-5 gap-2">{book.chapters.map((_, i) => <button key={i} className={'opt !mb-0 text-center' + (i === ci ? ' on' : '')} onClick={() => { stop(); setCi(i); setPick('') }}>{i + 1}</button>)}</div></Sheet>}
     </div>
     <input className={card + ' w-full'} placeholder="Search this translation…" value={q} onChange={e => setQ(e.target.value)} />
     {hits.map((h, k) => <p key={k} className="text-sm">{h.b} {h.i + 1}:{h.v + 1} — {h.t}</p>)}
-    <div style={readerStyle(settings)} className="space-y-2">{verses.map((t, v) => { const m = marks[key(v)] || {}; return <p key={v} onClick={() => setSel(v)} style={{ background: m.color ? m.color + '55' : undefined, cursor: 'pointer' }} className="rounded px-1 transition-colors">
+    {canSpeak && <div className="flex flex-wrap items-center gap-2"><button className="sd-btn" onClick={playing ? stop : play}>{playing ? '■ Stop' : '▶ Listen'}</button>{[0.8, 1, 1.25].map(r => <button key={r} className={'sd-chip' + (rate === r ? ' on' : '')} onClick={() => setRate(r)}>{r}×</button>)}<label className="text-xs flex items-center gap-1"><input type="checkbox" checked={auto} onChange={e => setAuto(e.target.checked)} />Next chapter</label></div>}
+    {canSpeak && bible.meta.language.toLowerCase() !== 'english' && <p className="text-xs opacity-60">Listening needs a {bible.meta.language} voice installed on your phone (Settings → Text-to-speech).</p>}
+    <div style={readerStyle(settings)} className="space-y-2">{verses.map((t, v) => { const m = marks[key(v)] || {}; return <p key={v} ref={el => { if (el && cur === v) el.scrollIntoView({ block: 'center', behavior: 'smooth' }) }} onClick={() => setSel(v)} style={{ background: cur === v ? 'color-mix(in srgb, var(--gold) 28%, transparent)' : m.color ? m.color + '55' : undefined, cursor: 'pointer' }} className="rounded px-1 transition-colors">
       {settings.vnums && <sup className="mr-1">{v + 1}</sup>}{t}{m.bookmark && <span className="sd-gold"> ★</span>}{m.note && <span className="opacity-70"> ✎</span>}</p> })}
       <p className="text-xs opacity-60 pt-2">{bible.meta.name}{bible.meta.license ? ' · ' + bible.meta.license : ''}</p>
       {sel !== null && verses[sel] !== undefined && (() => { const m = marks[key(sel)] || {}; const ref = `${book.name} ${ci + 1}:${sel + 1}`; return <Sheet title={ref} onClose={() => setSel(null)}>
@@ -103,7 +123,8 @@ function Bible({ settings }: { settings: any }) {
 
 function Plans({ settings }: { settings: any }) {
   const [plans, setPlans] = useState<Plan[]>([]); const [sel, setSel] = useState(''); const [open, setOpen] = useState<number | null>(null); const [sw, setSw] = useState(false)
-  const [items, setItems] = useLS<string[]>('planItems', [])
+  const [items, setItems] = useLS<string[]>('planItems', []); const [talk, setTalk] = useState(''); const [rate] = useLS<number>('ttsRate', 1)
+  useEffect(() => () => stopSpeak(), [])
   const [idx, setIdx] = useState<Entry[]>([]); const [bible, setBible] = useState<Bible | null>(null); const [custom] = useLS<Bible[]>('customBibles', [])
   useEffect(() => { get<Plan[]>('plans/plans.json').then(setPlans).catch(() => {}); get<Entry[]>('bibles/index.json').then(setIdx).catch(() => {}) }, [])
   useEffect(() => { const c = custom.find(b => b.meta.id === settings.translation); if (c) { setBible(c); return } const e = idx.find(x => x.id === settings.translation) || idx[0]; if (e) get<Bible>('bibles/' + e.path).then(setBible).catch(() => setBible(null)) }, [idx, custom, settings.translation])
@@ -112,6 +133,8 @@ function Plans({ settings }: { settings: any }) {
   const reading = (r: PRead) => { const bk = bible?.books.find(b => b.name.toLowerCase() === r.book.toLowerCase()); if (!bk) return <p className="text-sm">"{r.book}" is not in the selected Bible.</p>
     if (r.vFrom) return <div>{(bk.chapters[r.from - 1] || []).slice(r.vFrom - 1, r.vTo || r.vFrom).map((t, v) => <p key={v}><sup>{r.vFrom! + v}</sup> {t}</p>)}</div>
     return <>{Array.from({ length: Math.max(r.to, r.from) - r.from + 1 }, (_, k) => r.from + k).map(c => <div key={c}>{r.to > r.from && <h4 className="font-semibold">{r.book} {c}</h4>}{(bk.chapters[c - 1] || []).map((t, v) => <p key={v}><sup>{v + 1}</sup> {t}</p>)}</div>)}</> }
+  const textsOf = (r: PRead): string[] => { const bk = bible?.books.find(b => b.name.toLowerCase() === r.book.toLowerCase()); if (!bk) return []; if (r.vFrom) return (bk.chapters[r.from - 1] || []).slice(r.vFrom - 1, r.vTo || r.vFrom); return Array.from({ length: Math.max(r.to, r.from) - r.from + 1 }, (_, k) => r.from + k).flatMap(c => bk.chapters[c - 1] || []) }
+  const speakDay = (r: PDay, key: string) => { if (talk === key) { stopSpeak(); setTalk(''); return } const texts = [r.title || '', r.body || '', ...reads(r).flatMap(textsOf)].filter(Boolean); setTalk(key); speak(texts, bible?.meta.language || 'english', rate, undefined, () => setTalk('')) }
   const has = (k: string) => items.includes(k)
   const tick = (k: string) => setItems(has(k) ? items.filter(x => x !== k) : [...items, k])
   const keysOf = (p: Plan, i: number) => { const d = p.days[i]; const ks: string[] = []; if (d.body) ks.push(`${p.id}|${i}|d`); reads(d).forEach((_, k) => ks.push(`${p.id}|${i}|r${k}`)); return ks }
@@ -125,7 +148,7 @@ function Plans({ settings }: { settings: any }) {
     {sw && <Sheet title="Choose a plan" onClose={() => setSw(false)}>{plans.map(q => <button key={q.id} className={'opt' + (q.id === plan.id ? ' on' : '')} onClick={() => { setSel(q.id); const nx = q.days.findIndex((_, i) => !dayDone(q, i)); setOpen(nx < 0 ? 0 : nx); setSw(false) }}>{q.title}<span className="block text-xs opacity-70">{q.days.filter((_, i) => dayDone(q, i)).length}/{q.days.length} days done</span></button>)}</Sheet>}<h2 className="font-bold">{plan.title}</h2><div className="text-xs opacity-70">{nDone} of {plan.days.length} days done{bar(nDone, plan.days.length)}</div>
     {plan.days.map((r, i) => { const ks = keysOf(plan, i); const got = ks.filter(has).length
       return <div key={i} className={card}><button className="w-full flex justify-between gap-2 text-left" onClick={() => setOpen(open === i ? null : i)}><span>{ks.length > 0 && got === ks.length ? '✓ ' : ''}Day {i + 1}: {r.title || reads(r).map(refOf).join(', ')}</span><span className="text-xs opacity-70 whitespace-nowrap">{got}/{ks.length}</span></button>
-        {open === i && <div style={readerStyle(settings)} className="mt-3 space-y-4">
+        {open === i && <div style={readerStyle(settings)} className="mt-3 space-y-4">{canSpeak && <button className="sd-chip" onClick={() => speakDay(r, `${plan.id}|${i}`)}>{talk === `${plan.id}|${i}` ? '■ Stop' : '🔊 Listen to this day'}</button>}
           {r.body && <section><label className="flex items-center gap-2 font-bold sd-gold"><input type="checkbox" checked={has(`${plan.id}|${i}|d`)} onChange={() => tick(`${plan.id}|${i}|d`)} />Devotion</label><p className="whitespace-pre-wrap mt-1">{r.body}</p></section>}
           {reads(r).map((x, k) => <section key={k}><label className="flex items-center gap-2 font-bold sd-gold"><input type="checkbox" checked={has(`${plan.id}|${i}|r${k}`)} onChange={() => tick(`${plan.id}|${i}|r${k}`)} />{refOf(x)}</label><div className="mt-1 space-y-1">{reading(x)}</div></section>)}</div>}</div> })}</div>
 }
@@ -274,27 +297,36 @@ function useBible(tr: string) {
 }
 const STOP = new Set(['the', 'and', 'where', 'what', 'who', 'how', 'does', 'say', 'about', 'verse', 'bible', 'find', 'for', 'with', 'that', 'this', 'from', 'are', 'was', 'can', 'you'])
 
-function Ask({ settings, theme }: any) {
-  const bible = useBible(settings.translation); const [q, setQ] = useState(''); const [res, setRes] = useState<any>(null)
+function Ask({ settings, theme, opts }: any) {
+  const [pref, setPref] = useLS<string>('askBible', '')
+  const trId = pref || opts.find((o: any) => /english/i.test(o.language || ''))?.id || settings.translation
+  const bible = useBible(trId); const [q, setQ] = useState(''); const [res, setRes] = useState<any>(null); const [more, setMore] = useState(false)
   const open = (it: Hit) => { localStorage.setItem('sd:goto', JSON.stringify({ book: it.book, ch: it.ch })); location.hash = '#/bible' }
   const refs = (list: string[]) => list.flatMap(r => bible ? parseRef(bible, r) : [])
   const wordSearch = (text: string): Hit[] => { if (!bible) return []; const phrase = text.match(/["“](.+?)["”]/)?.[1]?.toLowerCase(); const terms = phrase ? [phrase] : text.toLowerCase().split(/\s+/).filter(t => t.length > 2 && !STOP.has(t)); if (!terms.length) return []
-    const out: Hit[] = []; for (const b of bible.books) for (let c = 0; c < b.chapters.length; c++) for (let v = 0; v < b.chapters[c].length; v++) { const t = b.chapters[c][v]; const l = t.toLowerCase(); if (terms.every(x => l.includes(x))) { out.push({ ref: `${b.name} ${c + 1}:${v + 1}`, book: b.name, ch: c + 1, text: t }); if (out.length >= 40) return out } }
+    const rx = terms.map(t => /^[\x00-\x7f]+$/.test(t) ? new RegExp('\\b' + t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) : null)
+    const ok = (l: string) => terms.every((t, i) => rx[i] ? rx[i]!.test(l) : l.includes(t))
+    const out: Hit[] = []; for (const b of bible.books) for (let c = 0; c < b.chapters.length; c++) for (let v = 0; v < b.chapters[c].length; v++) { const t = b.chapters[c][v]; if (ok(t.toLowerCase())) { out.push({ ref: `${b.name} ${c + 1}:${v + 1}`, book: b.name, ch: c + 1, text: t }); if (out.length >= 60) return out } }
     return out }
-  const run = (text: string) => { const t = text.trim(); if (!t || !bible) return; const ql = t.toLowerCase()
-    if (/suicid|kill myself|end my life|want to die|self.?harm|hurt myself/.test(ql)) return setRes({ kind: 'care', title: '', items: refs(['Psalm 34:18', 'Matthew 11:28']) })
-    const r = parseRef(bible, t); if (r.length) return setRes({ kind: 'ref', title: 'Verse found', items: r })
-    const tp = TOPICS.find(([, kw]) => kw.some(k => ql.includes(k))); if (tp) return setRes({ kind: 'topic', title: `Passages about ${tp[0].toLowerCase()}`, items: refs(tp[2]), q: t })
-    const h = wordSearch(t); setRes(h.length ? { kind: 'search', title: `${h.length}${h.length >= 40 ? '+' : ''} matches`, items: h } : { kind: 'none', title: '', items: [] }) }
-  return <div className="space-y-4"><h2 className="font-bold sd-gold">Ask</h2><p className="text-sm opacity-70">Find a verse, search a word, or tell me what you are going through.</p>
-    <div className="flex gap-2"><input className="flex-1 rounded-lg px-3 py-2" placeholder="John 3:16, forgiveness, shepherd…" value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => e.key === 'Enter' && run(q)} /><button className="sd-btn" onClick={() => run(q)}>Search</button></div>
+  const run = (text: string) => { const t = text.trim(); if (!t || !bible) return; const ql = t.toLowerCase(); setMore(false)
+    if (/suicid|kill myself|end my life|want to die|self.?harm|hurt myself/.test(ql)) return setRes({ kind: 'care', sections: [{ title: '', items: refs(['Psalm 34:18', 'Matthew 11:28']) }] })
+    const r = parseRef(bible, t); if (r.length) return setRes({ kind: 'ref', sections: [{ title: 'Verse found', items: r }] })
+    const tp = TOPICS.find(([, kw]) => kw.some(k => ql.includes(k)))
+    const hits = wordSearch(t)
+    if (tp) { const key = refs(tp[2]); const seen = new Set(key.map(x => x.ref)); return setRes({ kind: 'topic', sections: [{ title: `Key passages about ${tp[0].toLowerCase()}`, items: key }, { title: `Verses with “${t}”`, items: hits.filter(h => !seen.has(h.ref)) }] }) }
+    setRes(hits.length ? { kind: 'search', sections: [{ title: `${hits.length}${hits.length >= 60 ? '+' : ''} verses found`, items: hits }] } : { kind: 'none', sections: [] }) }
+  useEffect(() => { if (q.trim() && bible) run(q) }, [bible?.meta.id])
+  return <div className="space-y-4"><div className="flex items-center justify-between"><h2 className="font-bold sd-gold">Ask</h2><BiblePicker compact opts={opts} settings={{ translation: trId }} setSettings={(x: any) => setPref(x.translation)} /></div>
+    <p className="text-sm opacity-70">Find a verse, search a word, or tell me what you are going through.</p>
+    <div className="flex gap-2"><input className="flex-1 rounded-lg px-3 py-2" placeholder="John 3:16, courage, shepherd…" value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => e.key === 'Enter' && run(q)} /><button className="sd-btn" onClick={() => run(q)}>Search</button></div>
     <div className="flex flex-wrap gap-2">{TOPICS.map(([l]) => <button key={l} className="sd-chip" onClick={() => { setQ(l); run(l) }}>{l}</button>)}</div>
+    {bible && !/english/i.test(bible.meta.language) && <p className="text-xs opacity-70">Tip: word search matches the words of this Bible. Switch to English (top right) to search English words.</p>}
     {!bible && <p className="text-sm">Loading the Bible…</p>}
     {res?.kind === 'care' && <div className="sd-card space-y-2"><p>I am sorry you are hurting. You matter, and you do not have to carry this alone. Please reach out right now to someone you trust, such as a pastor, a family member or a friend. You can also call your local emergency number or a crisis helpline. If you are in immediate danger, call emergency services.</p></div>}
-    {res?.title && <h3 className="font-semibold">{res.title}</h3>}
-    {res?.items.map((it: Hit, k: number) => <div key={k} className={card + ' space-y-2'}><b className="sd-gold">{it.ref}</b><p style={readerStyle(settings)}>{it.text}</p><div className="flex gap-2"><button className="sd-chip" onClick={() => open(it)}>Open chapter</button><button className="sd-chip" onClick={() => navigator.clipboard?.writeText(`${it.ref} — ${it.text}`)}>Copy</button></div></div>)}
+    {res?.sections.map((sec: any, n: number) => sec.items.length > 0 && <div key={n} className="space-y-3">{sec.title && <h3 className="font-semibold">{sec.title} <span className="text-xs opacity-60">({sec.items.length})</span></h3>}
+      {(more ? sec.items : sec.items.slice(0, 8)).map((it: Hit, k: number) => <div key={k} className={card + ' space-y-2'}><b className="sd-gold">{it.ref}</b><p style={readerStyle(settings)}>{it.text}</p><div className="flex gap-2"><button className="sd-chip" onClick={() => open(it)}>Open chapter</button><button className="sd-chip" onClick={() => navigator.clipboard?.writeText(`${it.ref} — ${it.text}`)}>Copy</button></div></div>)}</div>)}
+    {res?.sections.some((x: any) => x.items.length > 8) && !more && <button className="sd-chip" onClick={() => setMore(true)}>Show all results</button>}
     {res?.kind === 'none' && <p className="text-sm">No match. Try one word, a verse like John 3:16, or one of the topics above.</p>}
-    {res?.kind === 'topic' && <button className="sd-chip" onClick={() => { const h = wordSearch(res.q); setRes({ kind: 'search', title: `${h.length} matches for “${res.q}”`, items: h }) }}>Search the whole Bible for “{res.q}”</button>}
     {(theme.contact?.whatsapp || theme.contact?.email) && <div className="sd-card space-y-2"><p className="text-sm">Have a deeper question? Ask your church team.</p><div className="flex gap-2">{theme.contact.whatsapp && <a className="sd-btn" href={`https://wa.me/${theme.contact.whatsapp}?text=${encodeURIComponent(q)}`}>WhatsApp</a>}{theme.contact.email && <a className="sd-chip" href={`mailto:${theme.contact.email}?subject=Question&body=${encodeURIComponent(q)}`}>Email</a>}</div></div>}
     <p className="text-xs opacity-60 text-center">{bible ? bible.meta.name + ' · ' : ''}This helper finds Scripture for you. It does not interpret it. For deeper questions, speak with your pastor.</p></div>
 }
@@ -317,15 +349,15 @@ export default function App() {
   return <div className="min-h-screen"><div className="max-w-2xl mx-auto p-4 space-y-4">
     <header className="flex justify-between items-center"><h1 className="text-xl font-bold sd-gold flex items-center gap-2"><img src={B + 'icons/icon.png'} alt="" className="w-9 h-9 rounded-xl glow" />{theme.appName || 'Salem Daily'}</h1>
       <nav className="flex flex-wrap justify-end gap-x-3 text-sm">{[['', 'Home'], ['bible', 'Bible'], ['devotions', 'Devotions'], ['plans', 'Plans'], ['ask', 'Ask'], ['settings', 'Settings']].map(([r, l]) => <a key={r} href={'#/' + r} className={'tab' + (tab === r ? ' active' : '')} onClick={() => navigator.vibrate?.(12)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d={ICONS[r]} /></svg><span>{l}</span></a>)}</nav></header>
-    {(tab === 'bible' || tab === 'plans') && opts.length > 1 && <BiblePicker opts={opts} settings={settings} setSettings={setSettings} block />}
+    {tab === 'plans' && opts.length > 1 && <BiblePicker opts={opts} settings={settings} setSettings={setSettings} block />}
     <div key={tab} className="rise space-y-4">
     {tab === '' && <div className="space-y-3">{heroSrc && <div className="overflow-hidden rounded-2xl"><img key={heroSrc} src={B + heroSrc} alt="" className="w-full max-h-64 object-cover kenburns rise" onError={e => (e.currentTarget.style.display = 'none')} /></div>}<h2 className="text-lg rise">Hello, {name}</h2>{theme.tagline && <p className="text-sm opacity-70">{theme.tagline}</p>}{verse && <blockquote className={card + ' rise'} style={{ animationDelay: '.3s' }}>{verse.text}<footer className="text-sm opacity-70">— {verse.ref}</footer></blockquote>}<div className="grid grid-cols-2 gap-3">{[['ask', '🔎', 'Ask & search'], ['bible', '📖', 'Read the Bible'], ['plans', '📅', 'My plans'], ['devotions', '🌅', 'Devotions'], ['games', '🎮', 'Word game'], ['saved', '🔖', 'Saved verses']].map(([r, e, l]) => <a key={r} href={'#/' + r} className="sd-card text-center rise"><div className="text-2xl">{e}</div><div className="text-sm">{l}</div></a>)}</div></div>}
-    {tab === 'bible' && <Bible settings={settings} />}
+    {tab === 'bible' && <Bible settings={settings} setSettings={setSettings} opts={opts} />}
     {tab === 'devotions' && <Devotions />}
     {tab === 'plans' && <Plans settings={settings} />}
     {tab === 'saved' && <Saved />}
     {tab === 'games' && <Games />}
-    {tab === 'ask' && <Ask settings={settings} theme={theme} />}
+    {tab === 'ask' && <Ask settings={settings} theme={theme} opts={opts} />}
     {tab === 'admin' && <Admin />}
     {tab === 'settings' && <SettingsPage name={name} setName={setName} settings={settings} setSettings={setSettings} opts={opts} restore={restore} />}
     </div>
