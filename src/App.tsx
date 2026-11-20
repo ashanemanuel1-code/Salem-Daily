@@ -28,6 +28,7 @@ const ICONS: Record<string, string> = {
   devotions: 'M12 7a5 5 0 100 10 5 5 0 000-10zM12 1v3M12 20v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M1 12h3M20 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1',
   plans: 'M5 4h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2zM16 2v4M8 2v4M3 10h18M9 16l2 2 4-4',
   saved: 'M6 3h12v18l-6-4-6 4z',
+  ask: 'M21 21l-4.3-4.3M11 18a7 7 0 100-14 7 7 0 000 14z',
   settings: 'M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0M14 4v4M8 10v4M16 16v4',
 }
 const BOOK_LIST = Object.values(NAMES)
@@ -75,6 +76,7 @@ function Bible({ settings }: { settings: any }) {
   const [custom] = useLS<Bible[]>('customBibles', [])
   useEffect(() => { get<Entry[]>('bibles/index.json').then(setIdx).catch(() => {}) }, [])
   useEffect(() => { const c = custom.find(b => b.meta.id === tid); if (c) return setBible(c); const e = idx.find(x => x.id === tid) || idx[0]; if (e) get<Bible>('bibles/' + e.path).then(setBible).catch(() => setBible(null)) }, [tid, idx, custom])
+  useEffect(() => { if (!bible) return; const g = ls<any>('goto', null); if (g) { const k = bible.books.findIndex(b => b.name === g.book); if (k >= 0) { setBi(k); setCi(g.ch - 1) } localStorage.removeItem('sd:goto') } }, [bible])
   if (!bible) return <p>Loading Bible… (no translation available yet — import one in Admin)</p>
   const book = bible.books[bi] ?? bible.books[0]; const verses = book.chapters[ci] ?? []
   const hits = q.length > 2 ? bible.books.flatMap(b => b.chapters.flatMap((c, i) => c.map((t, v) => ({ b: b.name, i, v, t })))).filter(x => x.t.toLowerCase().includes(q.toLowerCase())).slice(0, 30) : []
@@ -252,6 +254,51 @@ function Games() {
       <div className="flex gap-2 justify-center"><button className="sd-btn" onClick={check}>Check</button><button className="sd-chip" onClick={next}>Skip</button></div></div></div>
 }
 
+const TOPICS: [string, string[], string[]][] = [['Fear', ['fear', 'afraid', 'scared', 'frighten', 'terrif'], ['Isaiah 41:10', 'Psalm 23:4', '2 Timothy 1:7', 'Joshua 1:9', 'Psalm 56:3']], ['Anxiety', ['anxi', 'worry', 'worri', 'stress', 'overwhelm', 'panic'], ['Philippians 4:6-7', '1 Peter 5:7', 'Matthew 6:34', 'Psalm 94:19']], ['Forgiveness', ['forgiv', 'guilt', 'repent', 'shame'], ['1 John 1:9', 'Ephesians 4:32', 'Colossians 3:13', 'Psalm 103:12']], ['Prayer', ['pray'], ['Matthew 6:9-13', 'Philippians 4:6', 'James 5:16', '1 Thessalonians 5:17']], ['Love', ['love'], ['1 Corinthians 13:4-7', 'John 3:16', '1 John 4:7-8', 'Romans 8:38-39']], ['Hope', ['hope', 'future', 'despair'], ['Romans 15:13', 'Jeremiah 29:11', 'Lamentations 3:22-23', 'Psalm 42:11']], ['Faith', ['faith', 'believe', 'doubt', 'trust'], ['Hebrews 11:1', 'Romans 10:17', '2 Corinthians 5:7', 'Mark 9:23']], ['Strength', ['strength', 'strong', 'weak', 'tired', 'weary', 'exhaust'], ['Philippians 4:13', 'Isaiah 40:31', 'Psalm 46:1', 'Nehemiah 8:10']], ['Peace', ['peace', 'calm', 'restless'], ['John 14:27', 'Isaiah 26:3', 'Philippians 4:7', 'Psalm 29:11']], ['Grief', ['grief', 'grieve', 'mourn', 'death', 'died', 'loss', 'sad', 'comfort'], ['Psalm 34:18', 'Matthew 5:4', 'Revelation 21:4', '2 Corinthians 1:3-4']], ['Guidance', ['guid', 'direction', 'decision', 'decide', 'purpose'], ['Proverbs 3:5-6', 'Psalm 119:105', 'Psalm 32:8', 'Isaiah 30:21']], ['Joy', ['joy', 'happy', 'glad', 'rejoice'], ['Philippians 4:4', 'Psalm 16:11', 'John 15:11', 'Nehemiah 8:10']], ['Thanks', ['thank', 'grateful', 'gratitude'], ['1 Thessalonians 5:18', 'Psalm 107:1', 'Colossians 3:17', 'Psalm 100:4']], ['Salvation', ['saved', 'salvation', 'heaven', 'eternal'], ['John 3:16', 'Romans 10:9', 'Ephesians 2:8-9', 'Acts 4:12']], ['Temptation', ['tempt', 'addict', 'lust'], ['1 Corinthians 10:13', 'James 4:7', 'Matthew 26:41', 'Hebrews 4:15-16']], ['Wisdom', ['wisdom', 'wise', 'understanding'], ['James 1:5', 'Proverbs 9:10', 'Proverbs 2:6', 'Proverbs 4:7']], ['Patience', ['patien', 'wait', 'delay'], ['Romans 12:12', 'Psalm 27:14', 'James 5:7-8', 'Galatians 6:9']], ['Courage', ['courage', 'brave', 'bold'], ['Deuteronomy 31:6', 'Psalm 27:1', 'Isaiah 43:1-2', 'Joshua 1:9']], ['Healing', ['heal', 'sick', 'disease'], ['Psalm 147:3', 'Jeremiah 30:17', 'James 5:14-15', 'Isaiah 53:5']], ['Provision', ['provision', 'provide', 'money', 'financ', 'poverty'], ['Philippians 4:19', 'Matthew 6:33', 'Psalm 37:25', 'Psalm 23:1']], ['Loneliness', ['lonel', 'alone', 'abandon', 'forsaken'], ['Deuteronomy 31:8', 'Psalm 68:6', 'Matthew 28:20', 'Hebrews 13:5']], ['Anger', ['anger', 'angry', 'furious', 'rage', 'temper'], ['Ephesians 4:26-27', 'James 1:19-20', 'Proverbs 15:1', 'Psalm 37:8']]]
+const norm = (x: string) => x.toLowerCase().replace(/[\s.]/g, '')
+const ALIAS: Record<string, string> = { jn: 'john', mt: 'matthew', mk: 'mark', lk: 'luke', ps: 'psalms', gen: 'genesis', ex: 'exodus', rev: 'revelation', song: 'songofsolomon', sos: 'songofsolomon', php: 'philippians', phil: 'philippians' }
+const findBook = (b: Bible, raw: string) => { const q = ALIAS[norm(raw)] || norm(raw); return b.books.find(x => norm(x.name) === q) || (q.length >= 3 ? b.books.find(x => norm(x.name).startsWith(q)) : undefined) }
+type Hit = { ref: string; book: string; ch: number; text: string }
+const parseRef = (b: Bible, q: string): Hit[] => {
+  const m = q.trim().match(/^([1-3]?\s*[a-zA-Z][a-zA-Z .]*?)\s*(\d+)(?::(\d+)(?:\s*[-–]\s*(\d+))?)?$/); if (!m) return []
+  const bk = findBook(b, m[1]); const ch = +m[2]; const vs = bk?.chapters[ch - 1]; if (!bk || !vs) return []
+  if (!m[3]) return [{ ref: `${bk.name} ${ch}`, book: bk.name, ch, text: vs.slice(0, 4).join(' ') + (vs.length > 4 ? ' …' : '') }]
+  const from = +m[3]; const to = m[4] ? +m[4] : from; const text = vs.slice(from - 1, to).join(' '); if (!text) return []
+  return [{ ref: `${bk.name} ${ch}:${from}${to > from ? '–' + to : ''}`, book: bk.name, ch, text }]
+}
+function useBible(tr: string) {
+  const [idx, setIdx] = useState<Entry[]>([]); const [bible, setBible] = useState<Bible | null>(null); const [custom] = useLS<Bible[]>('customBibles', [])
+  useEffect(() => { get<Entry[]>('bibles/index.json').then(setIdx).catch(() => {}) }, [])
+  useEffect(() => { const c = custom.find(b => b.meta.id === tr); if (c) { setBible(c); return } const e = idx.find(x => x.id === tr) || idx[0]; if (e) get<Bible>('bibles/' + e.path).then(setBible).catch(() => setBible(null)) }, [idx, custom, tr])
+  return bible
+}
+const STOP = new Set(['the', 'and', 'where', 'what', 'who', 'how', 'does', 'say', 'about', 'verse', 'bible', 'find', 'for', 'with', 'that', 'this', 'from', 'are', 'was', 'can', 'you'])
+
+function Ask({ settings, theme }: any) {
+  const bible = useBible(settings.translation); const [q, setQ] = useState(''); const [res, setRes] = useState<any>(null)
+  const open = (it: Hit) => { localStorage.setItem('sd:goto', JSON.stringify({ book: it.book, ch: it.ch })); location.hash = '#/bible' }
+  const refs = (list: string[]) => list.flatMap(r => bible ? parseRef(bible, r) : [])
+  const wordSearch = (text: string): Hit[] => { if (!bible) return []; const phrase = text.match(/["“](.+?)["”]/)?.[1]?.toLowerCase(); const terms = phrase ? [phrase] : text.toLowerCase().split(/\s+/).filter(t => t.length > 2 && !STOP.has(t)); if (!terms.length) return []
+    const out: Hit[] = []; for (const b of bible.books) for (let c = 0; c < b.chapters.length; c++) for (let v = 0; v < b.chapters[c].length; v++) { const t = b.chapters[c][v]; const l = t.toLowerCase(); if (terms.every(x => l.includes(x))) { out.push({ ref: `${b.name} ${c + 1}:${v + 1}`, book: b.name, ch: c + 1, text: t }); if (out.length >= 40) return out } }
+    return out }
+  const run = (text: string) => { const t = text.trim(); if (!t || !bible) return; const ql = t.toLowerCase()
+    if (/suicid|kill myself|end my life|want to die|self.?harm|hurt myself/.test(ql)) return setRes({ kind: 'care', title: '', items: refs(['Psalm 34:18', 'Matthew 11:28']) })
+    const r = parseRef(bible, t); if (r.length) return setRes({ kind: 'ref', title: 'Verse found', items: r })
+    const tp = TOPICS.find(([, kw]) => kw.some(k => ql.includes(k))); if (tp) return setRes({ kind: 'topic', title: `Passages about ${tp[0].toLowerCase()}`, items: refs(tp[2]), q: t })
+    const h = wordSearch(t); setRes(h.length ? { kind: 'search', title: `${h.length}${h.length >= 40 ? '+' : ''} matches`, items: h } : { kind: 'none', title: '', items: [] }) }
+  return <div className="space-y-4"><h2 className="font-bold sd-gold">Ask</h2><p className="text-sm opacity-70">Find a verse, search a word, or tell me what you are going through.</p>
+    <div className="flex gap-2"><input className="flex-1 rounded-lg px-3 py-2" placeholder="John 3:16, forgiveness, shepherd…" value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => e.key === 'Enter' && run(q)} /><button className="sd-btn" onClick={() => run(q)}>Search</button></div>
+    <div className="flex flex-wrap gap-2">{TOPICS.map(([l]) => <button key={l} className="sd-chip" onClick={() => { setQ(l); run(l) }}>{l}</button>)}</div>
+    {!bible && <p className="text-sm">Loading the Bible…</p>}
+    {res?.kind === 'care' && <div className="sd-card space-y-2"><p>I am sorry you are hurting. You matter, and you do not have to carry this alone. Please reach out right now to someone you trust, such as a pastor, a family member or a friend. You can also call your local emergency number or a crisis helpline. If you are in immediate danger, call emergency services.</p></div>}
+    {res?.title && <h3 className="font-semibold">{res.title}</h3>}
+    {res?.items.map((it: Hit, k: number) => <div key={k} className={card + ' space-y-2'}><b className="sd-gold">{it.ref}</b><p style={readerStyle(settings)}>{it.text}</p><div className="flex gap-2"><button className="sd-chip" onClick={() => open(it)}>Open chapter</button><button className="sd-chip" onClick={() => navigator.clipboard?.writeText(`${it.ref} — ${it.text}`)}>Copy</button></div></div>)}
+    {res?.kind === 'none' && <p className="text-sm">No match. Try one word, a verse like John 3:16, or one of the topics above.</p>}
+    {res?.kind === 'topic' && <button className="sd-chip" onClick={() => { const h = wordSearch(res.q); setRes({ kind: 'search', title: `${h.length} matches for “${res.q}”`, items: h }) }}>Search the whole Bible for “{res.q}”</button>}
+    {(theme.contact?.whatsapp || theme.contact?.email) && <div className="sd-card space-y-2"><p className="text-sm">Have a deeper question? Ask your church team.</p><div className="flex gap-2">{theme.contact.whatsapp && <a className="sd-btn" href={`https://wa.me/${theme.contact.whatsapp}?text=${encodeURIComponent(q)}`}>WhatsApp</a>}{theme.contact.email && <a className="sd-chip" href={`mailto:${theme.contact.email}?subject=Question&body=${encodeURIComponent(q)}`}>Email</a>}</div></div>}
+    <p className="text-xs opacity-60 text-center">{bible ? bible.meta.name + ' · ' : ''}This helper finds Scripture for you. It does not interpret it. For deeper questions, speak with your pastor.</p></div>
+}
+
 export default function App() {
   const route = useHash(); const [name, setName] = useLS('name', ''); const [saved, setSettings] = useLS<any>('settings', {}); const settings: any = { translation: 'sample', font: 18, mode: 'dark', accent: '#d4a017', serif: false, spacing: 1.6, vnums: true, motion: true, ...saved }
   const [verse, setVerse] = useState<{ ref: string; text: string } | null>(null); const [theme, setTheme] = useState<any>({}); const [hi, setHi] = useState(0); const [bl, setBl] = useState<Entry[]>([]); const [cb2] = useLS<Bible[]>('customBibles', [])
@@ -269,15 +316,16 @@ export default function App() {
   const restore = async (f: File) => { try { const j = JSON.parse(await f.text()); Object.entries(j).forEach(([k, v]) => localStorage.setItem(k, v as string)); location.reload() } catch { alert('Invalid backup') } }
   return <div className="min-h-screen"><div className="max-w-2xl mx-auto p-4 space-y-4">
     <header className="flex justify-between items-center"><h1 className="text-xl font-bold sd-gold flex items-center gap-2"><img src={B + 'icons/icon.png'} alt="" className="w-9 h-9 rounded-xl glow" />{theme.appName || 'Salem Daily'}</h1>
-      <nav className="flex flex-wrap justify-end gap-x-3 text-sm">{[['', 'Home'], ['bible', 'Bible'], ['devotions', 'Devotions'], ['plans', 'Plans'], ['saved', 'Saved'], ['settings', 'Settings']].map(([r, l]) => <a key={r} href={'#/' + r} className={'tab' + (tab === r ? ' active' : '')} onClick={() => navigator.vibrate?.(12)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d={ICONS[r]} /></svg><span>{l}</span></a>)}</nav></header>
+      <nav className="flex flex-wrap justify-end gap-x-3 text-sm">{[['', 'Home'], ['bible', 'Bible'], ['devotions', 'Devotions'], ['plans', 'Plans'], ['ask', 'Ask'], ['settings', 'Settings']].map(([r, l]) => <a key={r} href={'#/' + r} className={'tab' + (tab === r ? ' active' : '')} onClick={() => navigator.vibrate?.(12)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d={ICONS[r]} /></svg><span>{l}</span></a>)}</nav></header>
     {(tab === 'bible' || tab === 'plans') && opts.length > 1 && <BiblePicker opts={opts} settings={settings} setSettings={setSettings} block />}
     <div key={tab} className="rise space-y-4">
-    {tab === '' && <div className="space-y-3">{heroSrc && <div className="overflow-hidden rounded-2xl"><img key={heroSrc} src={B + heroSrc} alt="" className="w-full max-h-64 object-cover kenburns rise" onError={e => (e.currentTarget.style.display = 'none')} /></div>}<h2 className="text-lg rise">Hello, {name}</h2>{theme.tagline && <p className="text-sm opacity-70">{theme.tagline}</p>}{verse && <blockquote className={card + ' rise'} style={{ animationDelay: '.3s' }}>{verse.text}<footer className="text-sm opacity-70">— {verse.ref}</footer></blockquote>}<div className="grid grid-cols-2 gap-3">{[['bible', '📖', 'Read the Bible'], ['plans', '📅', 'My plans'], ['games', '🎮', 'Word game'], ['saved', '🔖', 'Saved verses']].map(([r, e, l]) => <a key={r} href={'#/' + r} className="sd-card text-center rise"><div className="text-2xl">{e}</div><div className="text-sm">{l}</div></a>)}</div></div>}
+    {tab === '' && <div className="space-y-3">{heroSrc && <div className="overflow-hidden rounded-2xl"><img key={heroSrc} src={B + heroSrc} alt="" className="w-full max-h-64 object-cover kenburns rise" onError={e => (e.currentTarget.style.display = 'none')} /></div>}<h2 className="text-lg rise">Hello, {name}</h2>{theme.tagline && <p className="text-sm opacity-70">{theme.tagline}</p>}{verse && <blockquote className={card + ' rise'} style={{ animationDelay: '.3s' }}>{verse.text}<footer className="text-sm opacity-70">— {verse.ref}</footer></blockquote>}<div className="grid grid-cols-2 gap-3">{[['ask', '🔎', 'Ask & search'], ['bible', '📖', 'Read the Bible'], ['plans', '📅', 'My plans'], ['devotions', '🌅', 'Devotions'], ['games', '🎮', 'Word game'], ['saved', '🔖', 'Saved verses']].map(([r, e, l]) => <a key={r} href={'#/' + r} className="sd-card text-center rise"><div className="text-2xl">{e}</div><div className="text-sm">{l}</div></a>)}</div></div>}
     {tab === 'bible' && <Bible settings={settings} />}
     {tab === 'devotions' && <Devotions />}
     {tab === 'plans' && <Plans settings={settings} />}
     {tab === 'saved' && <Saved />}
     {tab === 'games' && <Games />}
+    {tab === 'ask' && <Ask settings={settings} theme={theme} />}
     {tab === 'admin' && <Admin />}
     {tab === 'settings' && <SettingsPage name={name} setName={setName} settings={settings} setSettings={setSettings} opts={opts} restore={restore} />}
     </div>
