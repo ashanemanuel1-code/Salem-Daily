@@ -1,3 +1,7 @@
 <!doctype html><html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
 <link rel="manifest" href="manifest.webmanifest"/><link rel="icon" href="icons/icon.png"/><link rel="apple-touch-icon" href="icons/icon.png"/><meta name="theme-color" content="#0b0b0f"/>
-<title>Salem Daily</title></head><body><div id="root"></div><script type="module" src="/src/main.tsx"></script></body></html>
+<title>Salem Daily</title><script>
+window.sdHeal=function(){var go=function(){location.reload()};try{(navigator.serviceWorker?navigator.serviceWorker.getRegistrations():Promise.resolve([])).then(function(r){return Promise.all(r.map(function(x){return x.unregister()}))}).then(function(){return caches.keys()}).then(function(k){return Promise.all(k.map(function(x){return caches.delete(x)}))}).then(go,go)}catch(e){go()}};
+addEventListener('error',function(e){var t=e.target;if(t&&t.tagName==='SCRIPT'&&!sessionStorage.getItem('sd-boot')){sessionStorage.setItem('sd-boot','1');window.sdHeal()}},true);
+setTimeout(function(){var r=document.getElementById('root');if(r&&!r.children.length){r.innerHTML='<div style="min-height:100vh;background:#0b0b0f;color:#fdf3d0;font-family:sans-serif;text-align:center;padding:40px 20px"><h2 style="color:#d4a017">Salem Daily is not loading</h2><p>Check your internet, then tap the button.</p><button onclick="sdHeal()" style="background:#d4a017;color:#1a1200;border:0;border-radius:10px;padding:10px 18px;font-weight:700">Repair and reload</button></div>'}},8000);
+</script></head><body><div id="root"></div><script type="module" src="/src/main.tsx"></script></body></html>
