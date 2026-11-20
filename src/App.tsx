@@ -40,6 +40,8 @@ let tk = 0
 let ntts: any
 let nActive = false
 const nativeTTS = () => { const c = (window as any).Capacitor; if (!c?.isNativePlatform?.()) return null; if (!ntts) ntts = c.registerPlugin('TextToSpeech'); return ntts }
+const speechOK = () => canSpeak || !!nativeTTS()
+const langOf = (t: string) => /[\u0B80-\u0BFF]/.test(t) ? 'tamil' : /[\u0D80-\u0DFF]/.test(t) ? 'sinhala' : 'english'
 const stopSpeak = () => { tk++; if (nActive) { nActive = false; Promise.resolve(nativeTTS()?.stop?.()).catch(() => {}) } if (canSpeak) speechSynthesis.cancel() }
 const speak = (texts: string[], language: string, rate: number, onIdx?: (i: number) => void, onDone?: () => void, onFail?: (m?: string) => void) => {
   if (!texts.length) return
@@ -100,12 +102,12 @@ function Bible({ settings, setSettings, opts }: { settings: any; setSettings: an
   const [rate, setRate] = useLS<number>('ttsRate', 1); const [auto, setAuto] = useLS<boolean>('ttsAuto', false)
   const stop = () => { stopSpeak(); setPlaying(false); setCur(-1) }
   const advance = () => { if (!bible) return; const b = bible.books[bi]; if (ci + 1 < b.chapters.length) { setCi(ci + 1); setResume(true) } else if (bi + 1 < bible.books.length) { setBi(bi + 1); setCi(0); setResume(true) } }
-  const startReading = (vs: string[]) => { if (!bible) return; setPlaying(true); speak(vs, bible.meta.language, rate, setCur, () => { setCur(-1); setPlaying(false); if (auto) advance() }, (m) => { setCur(-1); setPlaying(false); alert('Could not play the voice (' + (m || 'unknown') + '). Check that a ' + bible.meta.language + ' voice is installed in your phone settings (Text-to-speech).') }) }
+  const startReading = (vs: string[], off = 0) => { if (!bible) return; setPlaying(true); speak(vs, bible.meta.language, rate, (i: number) => setCur(i + off), () => { setCur(-1); setPlaying(false); if (auto) advance() }, (m) => { setCur(-1); setPlaying(false); alert('Could not play the voice (' + (m || 'unknown') + '). Check that a ' + bible.meta.language + ' voice is installed in your phone settings (Text-to-speech).') }) }
   useEffect(() => { if (!resume || !bible) return; setResume(false); startReading(bible.books[bi]?.chapters[ci] || []) }, [resume])
   useEffect(() => () => stopSpeak(), [])
   useEffect(() => { if (!bible) return; const g = ls<any>('goto', null); if (g) { const k = bible.books.findIndex(b => b.name === g.book); if (k >= 0) { setBi(k); setCi(g.ch - 1) } localStorage.removeItem('sd:goto') } }, [bible])
   if (!bible) return <p>Loading Bible… (no translation available yet — import one in Admin)</p>
-  const book = bible.books[bi] ?? bible.books[0]; const verses = book.chapters[ci] ?? []; const play = () => startReading(verses)
+  const book = bible.books[bi] ?? bible.books[0]; const verses = book.chapters[ci] ?? []; const play = () => startReading(verses); const playFrom = (n: number) => startReading(verses.slice(n), n)
   const hits = q.length > 2 ? bible.books.flatMap(b => b.chapters.flatMap((c, i) => c.map((t, v) => ({ b: b.name, i, v, t })))).filter(x => x.t.toLowerCase().includes(q.toLowerCase())).slice(0, 30) : []
   const key = (v: number) => `${bible.meta.id}|${book.name}|${ci}|${v}`
   const set = (v: number, p: object) => setMarks({ ...marks, [key(v)]: { ...marks[key(v)], ...p } })
@@ -118,15 +120,16 @@ function Bible({ settings, setSettings, opts }: { settings: any; setSettings: an
     </div>
     <input className={card + ' w-full'} placeholder="Search this translation…" value={q} onChange={e => setQ(e.target.value)} />
     {hits.map((h, k) => <p key={k} className="text-sm">{h.b} {h.i + 1}:{h.v + 1} — {h.t}</p>)}
-    {canSpeak && <div className="flex flex-wrap items-center gap-2"><button className="sd-btn" onClick={playing ? stop : play}>{playing ? '■ Stop' : '▶ Listen'}</button>{[0.8, 1, 1.25].map(r => <button key={r} className={'sd-chip' + (rate === r ? ' on' : '')} onClick={() => setRate(r)}>{r}×</button>)}<label className="text-xs flex items-center gap-1"><input type="checkbox" checked={auto} onChange={e => setAuto(e.target.checked)} />Next chapter</label><span className="text-xs opacity-50">{nativeTTS() ? 'phone voice' : 'browser voice'}</span></div>}
-    {canSpeak && bible.meta.language.toLowerCase() !== 'english' && <p className="text-xs opacity-60">Listening needs a {bible.meta.language} voice installed on your phone (Settings → Text-to-speech).</p>}
+    {!speechOK() && <p className="text-xs opacity-60">🔇 Voice reading is not available on this device.</p>}
+    {speechOK() && <div className="flex flex-wrap items-center gap-2"><button className="sd-btn" onClick={playing ? stop : play}>{playing ? '■ Stop' : '▶ Listen'}</button>{[0.8, 1, 1.25].map(r => <button key={r} className={'sd-chip' + (rate === r ? ' on' : '')} onClick={() => setRate(r)}>{r}×</button>)}<label className="text-xs flex items-center gap-1"><input type="checkbox" checked={auto} onChange={e => setAuto(e.target.checked)} />Next chapter</label><span className="text-xs opacity-50">{nativeTTS() ? 'phone voice' : 'browser voice'}</span></div>}
+    {speechOK() && bible.meta.language.toLowerCase() !== 'english' && <p className="text-xs opacity-60">Listening needs a {bible.meta.language} voice installed on your phone (Settings → Text-to-speech).</p>}
     <div style={readerStyle(settings)} className="space-y-2">{verses.map((t, v) => { const m = marks[key(v)] || {}; return <p key={v} ref={el => { if (el && cur === v) el.scrollIntoView({ block: 'center', behavior: 'smooth' }) }} onClick={() => setSel(v)} style={{ background: cur === v ? 'color-mix(in srgb, var(--gold) 28%, transparent)' : m.color ? m.color + '55' : undefined, cursor: 'pointer' }} className="rounded px-1 transition-colors">
       {settings.vnums && <sup className="mr-1">{v + 1}</sup>}{t}{m.bookmark && <span className="sd-gold"> ★</span>}{m.note && <span className="opacity-70"> ✎</span>}</p> })}
       <p className="text-xs opacity-60 pt-2">{bible.meta.name}{bible.meta.license ? ' · ' + bible.meta.license : ''}</p>
       {sel !== null && verses[sel] !== undefined && (() => { const m = marks[key(sel)] || {}; const ref = `${book.name} ${ci + 1}:${sel + 1}`; return <Sheet title={ref} onClose={() => setSel(null)}>
         <p className="mb-3 text-sm opacity-80">{verses[sel]}</p>
         <div className="flex gap-3 items-center mb-3 flex-wrap">{['#fde047', '#86efac', '#7dd3fc', '#f9a8d4', '#fdba74'].map(c => <button key={c} aria-label="highlight" className="w-9 h-9 rounded-full grid place-items-center text-black text-sm" style={{ background: c }} onClick={() => set(sel, { color: m.color === c ? undefined : c })}>{m.color === c ? '✓' : ''}</button>)}{m.color && <button className="sd-chip" onClick={() => set(sel, { color: undefined })}>Remove</button>}</div>
-        <div className="flex gap-2 flex-wrap mb-3"><button className="sd-chip" onClick={() => set(sel, { bookmark: !m.bookmark })}>{m.bookmark ? '★ Bookmarked' : '☆ Bookmark'}</button><button className="sd-chip" onClick={() => navigator.clipboard?.writeText(`${ref} — ${verses[sel]}`)}>📋 Copy</button>{typeof navigator.share === 'function' && <button className="sd-chip" onClick={() => navigator.share({ text: `${ref} — ${verses[sel]}` }).catch(() => {})}>↗ Share</button>}</div>
+        <div className="flex gap-2 flex-wrap mb-3"><button className="sd-chip" onClick={() => set(sel, { bookmark: !m.bookmark })}>{m.bookmark ? '★ Bookmarked' : '☆ Bookmark'}</button>{speechOK() && <button className="sd-chip" onClick={() => { const n = sel; setSel(null); stop(); playFrom(n) }}>▶ Read from here</button>}{speechOK() && <button className="sd-chip" onClick={() => { setSel(null); stop(); speak([verses[sel]], bible.meta.language, rate) }}>🔊 This verse</button>}<button className="sd-chip" onClick={() => navigator.clipboard?.writeText(`${ref} — ${verses[sel]}`)}>📋 Copy</button>{typeof navigator.share === 'function' && <button className="sd-chip" onClick={() => navigator.share({ text: `${ref} — ${verses[sel]}` }).catch(() => {})}>↗ Share</button>}</div>
         <textarea className="w-full rounded-lg p-2" rows={3} placeholder="Add a note…" value={m.note || ''} onChange={e => set(sel, { note: e.target.value })} /></Sheet> })()}</div></div>
 }
 
@@ -157,7 +160,7 @@ function Plans({ settings }: { settings: any }) {
     {sw && <Sheet title="Choose a plan" onClose={() => setSw(false)}>{plans.map(q => <button key={q.id} className={'opt' + (q.id === plan.id ? ' on' : '')} onClick={() => { setSel(q.id); const nx = q.days.findIndex((_, i) => !dayDone(q, i)); setOpen(nx < 0 ? 0 : nx); setSw(false) }}>{q.title}<span className="block text-xs opacity-70">{q.days.filter((_, i) => dayDone(q, i)).length}/{q.days.length} days done</span></button>)}</Sheet>}<h2 className="font-bold">{plan.title}</h2><div className="text-xs opacity-70">{nDone} of {plan.days.length} days done{bar(nDone, plan.days.length)}</div>
     {plan.days.map((r, i) => { const ks = keysOf(plan, i); const got = ks.filter(has).length
       return <div key={i} className={card}><button className="w-full flex justify-between gap-2 text-left" onClick={() => setOpen(open === i ? null : i)}><span>{ks.length > 0 && got === ks.length ? '✓ ' : ''}Day {i + 1}: {r.title || reads(r).map(refOf).join(', ')}</span><span className="text-xs opacity-70 whitespace-nowrap">{got}/{ks.length}</span></button>
-        {open === i && <div style={readerStyle(settings)} className="mt-3 space-y-4">{canSpeak && <button className="sd-chip" onClick={() => speakDay(r, `${plan.id}|${i}`)}>{talk === `${plan.id}|${i}` ? '■ Stop' : '🔊 Listen to this day'}</button>}
+        {open === i && <div style={readerStyle(settings)} className="mt-3 space-y-4">{speechOK() && <button className="sd-chip" onClick={() => speakDay(r, `${plan.id}|${i}`)}>{talk === `${plan.id}|${i}` ? '■ Stop' : '🔊 Listen to this day'}</button>}
           {r.body && <section><label className="flex items-center gap-2 font-bold sd-gold"><input type="checkbox" checked={has(`${plan.id}|${i}|d`)} onChange={() => tick(`${plan.id}|${i}|d`)} />Devotion</label><p className="whitespace-pre-wrap mt-1">{r.body}</p></section>}
           {reads(r).map((x, k) => <section key={k}><label className="flex items-center gap-2 font-bold sd-gold"><input type="checkbox" checked={has(`${plan.id}|${i}|r${k}`)} onChange={() => tick(`${plan.id}|${i}|r${k}`)} />{refOf(x)}</label><div className="mt-1 space-y-1">{reading(x)}</div></section>)}</div>}</div> })}</div>
 }
@@ -264,7 +267,7 @@ function SettingsPage({ name, setName, settings, setSettings, opts, restore }: a
       <label className={row}>Line spacing<input type="range" min={1.3} max={2.2} step={0.1} value={settings.spacing} onChange={e => up({ spacing: +e.target.value })} /></label>
       <label className={row}>Serif font<input type="checkbox" checked={settings.serif} onChange={e => up({ serif: e.target.checked })} /></label>
       <label className={row}>Show verse numbers<input type="checkbox" checked={settings.vnums} onChange={e => up({ vnums: e.target.checked })} /></label>
-      <p className="rounded-lg p-3 border border-white/10" style={readerStyle(settings)}>{settings.vnums && <sup className="mr-1">1</sup>}The LORD is my shepherd; I shall not want.</p></div>
+      <p className="rounded-lg p-3 border border-white/10" style={readerStyle(settings)}>{settings.vnums && <sup className="mr-1">1</sup>}The LORD is my shepherd; I shall not want.</p><p className="text-xs opacity-60">Voice: {nativeTTS() ? 'phone voice (app)' : canSpeak ? 'browser voice' : 'not available on this device'}</p></div>
     <div className="sd-card space-y-2"><h3 className="sd-gold font-semibold">My data</h3><p className="text-xs opacity-70">Everything is saved only on this device.</p>
       <button className="sd-btn" onClick={() => save('salem-daily-backup.json', Object.fromEntries(Object.keys(localStorage).filter(k => k.startsWith('sd:')).map(k => [k, localStorage.getItem(k)])))}>Download my data</button>
       <label className="block text-sm">Restore backup <input type="file" accept=".json" onChange={e => e.target.files?.[0] && restore(e.target.files[0])} /></label>
@@ -340,9 +343,16 @@ function Ask({ settings, theme, opts }: any) {
     <p className="text-xs opacity-60 text-center">{bible ? bible.meta.name + ' · ' : ''}This helper finds Scripture for you. It does not interpret it. For deeper questions, speak with your pastor.</p></div>
 }
 
+function SelReader({ rate }: { rate: number }) {
+  const [t, setT] = useState('')
+  useEffect(() => { const f = () => setT((getSelection()?.toString() || '').trim()); document.addEventListener('selectionchange', f); return () => document.removeEventListener('selectionchange', f) }, [])
+  if (t.length < 2 || !speechOK()) return null
+  return createPortal(<button className="sd-btn" style={{ position: 'fixed', left: '50%', transform: 'translateX(-50%)', bottom: 'calc(6.5rem + env(safe-area-inset-bottom))', zIndex: 60 }} onPointerDown={e => { e.preventDefault(); speak([t], langOf(t), rate, undefined, undefined, m => alert('Could not play the voice (' + (m || 'unknown') + ')')) }}>🔊 Read selection</button>, document.body)
+}
+
 export default function App() {
   const route = useHash(); const [name, setName] = useLS('name', ''); const [saved, setSettings] = useLS<any>('settings', {}); const settings: any = { translation: 'sample', font: 18, mode: 'dark', accent: '#d4a017', serif: false, spacing: 1.6, vnums: true, motion: true, ...saved }
-  const [verse, setVerse] = useState<{ ref: string; text: string } | null>(null); const [theme, setTheme] = useState<any>({}); const [hi, setHi] = useState(0); const [bl, setBl] = useState<Entry[]>([]); const [cb2] = useLS<Bible[]>('customBibles', [])
+  const [verse, setVerse] = useState<{ ref: string; text: string } | null>(null); const [ttsRate] = useLS<number>('ttsRate', 1); const [theme, setTheme] = useState<any>({}); const [hi, setHi] = useState(0); const [bl, setBl] = useState<Entry[]>([]); const [cb2] = useLS<Bible[]>('customBibles', [])
   useEffect(() => { get<Entry[]>('bibles/index.json').then(arr(setBl)).catch(() => {}) }, [])
   const opts = [...bl.map(b => ({ id: b.id, name: b.name, language: b.language })), ...cb2.map(c => ({ id: c.meta.id, name: c.meta.name, language: c.meta.language }))]
   const heroList: string[] = ([] as string[]).concat(theme.hero || []); const heroSrc = heroList.length ? heroList[hi % heroList.length] : ''
@@ -355,7 +365,7 @@ export default function App() {
   if (!name) return <Welcome onDone={setName} />
   const tab = route.split('/')[0]
   const restore = async (f: File) => { try { const j = JSON.parse(await f.text()); Object.entries(j).forEach(([k, v]) => localStorage.setItem(k, v as string)); location.reload() } catch { alert('Invalid backup') } }
-  return <div className="min-h-screen"><div className="max-w-2xl mx-auto p-4 space-y-4">
+  return <div className="min-h-screen"><div className="max-w-2xl mx-auto p-4 space-y-4"><SelReader rate={ttsRate} />
     <header className="flex justify-between items-center"><h1 className="text-xl font-bold sd-gold flex items-center gap-2"><img src={B + 'icons/icon.png'} alt="" className="w-9 h-9 rounded-xl glow" />{theme.appName || 'Salem Daily'}</h1>
       <nav className="flex flex-wrap justify-end gap-x-3 text-sm">{[['', 'Home'], ['bible', 'Bible'], ['devotions', 'Devotions'], ['plans', 'Plans'], ['ask', 'Ask'], ['settings', 'Settings']].map(([r, l]) => <a key={r} href={'#/' + r} className={'tab' + (tab === r ? ' active' : '')}><svg viewBox="0 0 24 24" aria-hidden="true"><path d={ICONS[r]} /></svg><span>{l}</span></a>)}</nav></header>
     {tab === 'plans' && opts.length > 1 && <BiblePicker opts={opts} settings={settings} setSettings={setSettings} block />}
