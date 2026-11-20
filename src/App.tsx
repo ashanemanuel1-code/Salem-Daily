@@ -251,7 +251,7 @@ function Admin() {
 
 const readerStyle = (st: any) => ({ fontSize: st.font, lineHeight: st.spacing, fontFamily: st.serif ? 'Georgia, "Times New Roman", serif' : undefined })
 
-function SettingsPage({ name, setName, settings, setSettings, opts, restore }: any) {
+function SettingsPage({ name, setName, settings, setSettings, opts, restore, theme }: any) {
   const up = (p: object) => setSettings({ ...settings, ...p })
   const row = 'flex items-center justify-between gap-3 py-1'
   const chip = (on: boolean) => 'sd-chip' + (on ? ' on' : '')
@@ -268,6 +268,7 @@ function SettingsPage({ name, setName, settings, setSettings, opts, restore }: a
       <label className={row}>Serif font<input type="checkbox" checked={settings.serif} onChange={e => up({ serif: e.target.checked })} /></label>
       <label className={row}>Show verse numbers<input type="checkbox" checked={settings.vnums} onChange={e => up({ vnums: e.target.checked })} /></label>
       <p className="rounded-lg p-3 border border-white/10" style={readerStyle(settings)}>{settings.vnums && <sup className="mr-1">1</sup>}The LORD is my shepherd; I shall not want.</p><p className="text-xs opacity-60">Voice: {nativeTTS() ? 'phone voice (app)' : canSpeak ? 'browser voice' : 'not available on this device'}</p></div>
+    {theme?.contact?.whatsapp && <div className="sd-card space-y-2"><h3 className="sd-gold font-semibold">Community</h3><p className="text-xs opacity-70">Optional. This opens WhatsApp so you can say hello to the church team. It shares your WhatsApp number with them.</p><a className="sd-btn inline-block" href={`https://wa.me/${theme.contact.whatsapp}?text=${encodeURIComponent(`Hello, I am ${name}. I am using Salem Daily.`)}`}>👋 Say hello to the church team</a></div>}
     <div className="sd-card space-y-2"><h3 className="sd-gold font-semibold">My data</h3><p className="text-xs opacity-70">Everything is saved only on this device.</p>
       <button className="sd-btn" onClick={() => save('salem-daily-backup.json', Object.fromEntries(Object.keys(localStorage).filter(k => k.startsWith('sd:')).map(k => [k, localStorage.getItem(k)])))}>Download my data</button>
       <label className="block text-sm">Restore backup <input type="file" accept=".json" onChange={e => e.target.files?.[0] && restore(e.target.files[0])} /></label>
@@ -378,7 +379,7 @@ export default function App() {
     {tab === 'games' && <Games />}
     {tab === 'ask' && <Ask settings={settings} theme={theme} opts={opts} />}
     {tab === 'admin' && <Admin />}
-    {tab === 'settings' && <SettingsPage name={name} setName={setName} settings={settings} setSettings={setSettings} opts={opts} restore={restore} />}
+    {tab === 'settings' && <SettingsPage name={name} setName={setName} settings={settings} setSettings={setSettings} opts={opts} restore={restore} theme={theme} />}
     </div>
   </div></div>
 }

@@ -3,17 +3,20 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App'
 
+const heal = async () => { try { const rs = await navigator.serviceWorker?.getRegistrations(); await Promise.all((rs || []).map(r => r.unregister())); const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))) } catch { /* ignore */ } location.reload() }
+
 class Boundary extends Component<{ children: ReactNode }, { err: string }> {
   state = { err: '' }
   static getDerivedStateFromError(e: unknown) { return { err: String((e as Error)?.message || e) } }
+  componentDidCatch() { if (!sessionStorage.getItem('sd-healed')) { sessionStorage.setItem('sd-healed', '1'); heal() } }
   render() {
     if (!this.state.err) return this.props.children
     const b: React.CSSProperties = { background: '#d4a017', color: '#1a1200', borderRadius: 10, padding: '8px 16px', fontWeight: 700, margin: 6, border: 0 }
     return <div style={{ minHeight: '100vh', background: '#0b0b0f', color: '#fdf3d0', padding: 24, textAlign: 'center', fontFamily: 'sans-serif' }}>
       <h2 style={{ color: '#d4a017' }}>Something went wrong on this page</h2>
-      <p>Your data is safe. Please try again.</p>
+      <p>Your data is safe. The app is repairing itself. If this page stays, tap Repair and reload.</p>
       <button style={b} onClick={() => { location.hash = '#/'; this.setState({ err: '' }) }}>Go to Home</button>
-      <button style={b} onClick={() => location.reload()}>Reload</button>
+      <button style={b} onClick={() => heal()}>Repair and reload</button>
       <p style={{ fontSize: 11, opacity: 0.6, marginTop: 24 }}>{this.state.err}</p>
     </div>
   }
