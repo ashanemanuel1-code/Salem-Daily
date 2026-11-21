@@ -14,7 +14,7 @@ type Cat = { id: string; name: string }
 type Bible = { meta: { id: string; name: string; language: string; license?: string }; books: { name: string; chapters: string[][] }[] }
 type PRead = { book: string; from: number; to: number; vFrom?: number; vTo?: number }
 type PDay = PRead & { title?: string; body?: string; more?: PRead[] }
-type Plan = { id: string; title: string; days: PDay[] }
+type Plan = { id: string; title: string; category?: string; description?: string; days: PDay[] }
 type Entry = { id: string; name: string; language: string; path: string }
 
 export const validateBible = (j: any): string | null => {
@@ -135,7 +135,7 @@ function Bible({ settings, setSettings, opts }: { settings: any; setSettings: an
 
 function Plans({ settings }: { settings: any }) {
   const [plans, setPlans] = useState<Plan[]>([]); const [sel, setSel] = useState(''); const [open, setOpen] = useState<number | null>(null); const [sw, setSw] = useState(false)
-  const [items, setItems] = useLS<string[]>('planItems', []); const [talk, setTalk] = useState(''); const [rate] = useLS<number>('ttsRate', 1)
+  const [items, setItems] = useLS<string[]>('planItems', []); const [talk, setTalk] = useState(''); const [started, setStarted] = useLS<Record<string, string>>('planStarted', {}); const [tab, setTab] = useState(''); const [cat, setCat] = useState('All'); const [msg, setMsg] = useState(''); const [rate] = useLS<number>('ttsRate', 1)
   useEffect(() => () => stopSpeak(), [])
   const [idx, setIdx] = useState<Entry[]>([]); const [bible, setBible] = useState<Bible | null>(null); const [custom] = useLS<Bible[]>('customBibles', [])
   useEffect(() => { get<Plan[]>('plans/plans.json').then(arr(setPlans)).catch(() => {}); get<Entry[]>('bibles/index.json').then(arr(setIdx)).catch(() => {}) }, [])
@@ -153,16 +153,39 @@ function Plans({ settings }: { settings: any }) {
   const dayDone = (p: Plan, i: number) => { const ks = keysOf(p, i); return ks.length > 0 && ks.every(has) }
   const plan = plans.find(p => p.id === sel)
   const bar = (n: number, t: number) => <span className="block h-1 mt-2 rounded bg-white/10"><span className="block h-1 rounded" style={{ width: `${t ? n * 100 / t : 0}%`, background: 'var(--gold)' }} /></span>
-  if (!plan) return <div className="space-y-3"><h2 className="font-bold">Reading plans</h2>{!plans.length && <p>No plans yet.</p>}{plans.map(p => { const n = p.days.filter((_, i) => dayDone(p, i)).length
-    return <button key={p.id} className={card + ' block w-full text-left'} onClick={() => { setSel(p.id); const nx = p.days.findIndex((_, i) => !dayDone(p, i)); setOpen(nx < 0 ? 0 : nx) }}><b className="sd-gold">{p.title}</b><span className="block text-xs opacity-70">{n >= p.days.length ? '✓ Completed' : n ? `Continue · Day ${p.days.findIndex((_, i) => !dayDone(p, i)) + 1}` : 'Start plan →'} · {n}/{p.days.length} days</span>{bar(n, p.days.length)}</button> })}</div>
-  const nDone = plan.days.filter((_, i) => dayDone(plan, i)).length
-  return <div className="space-y-3"><div className="flex justify-between items-center"><button className="text-sm underline" onClick={() => setSel('')}>← All plans</button><button className="sd-chip" onClick={() => setSw(true)}>⇄ Switch plan</button></div>
-    {sw && <Sheet title="Choose a plan" onClose={() => setSw(false)}>{plans.map(q => <button key={q.id} className={'opt' + (q.id === plan.id ? ' on' : '')} onClick={() => { setSel(q.id); const nx = q.days.findIndex((_, i) => !dayDone(q, i)); setOpen(nx < 0 ? 0 : nx); setSw(false) }}>{q.title}<span className="block text-xs opacity-70">{q.days.filter((_, i) => dayDone(q, i)).length}/{q.days.length} days done</span></button>)}</Sheet>}<h2 className="font-bold">{plan.title}</h2><div className="text-xs opacity-70">{nDone} of {plan.days.length} days done{bar(nDone, plan.days.length)}</div>
+  const isStarted = (p: Plan) => !!started[p.id] || items.some(k => k.startsWith(p.id + '|'))
+  const doneCount = (p: Plan) => p.days.filter((_, i) => dayDone(p, i)).length
+  const nextDay = (p: Plan) => p.days.findIndex((_, i) => !dayDone(p, i))
+  const openPlan = (p: Plan) => { setSel(p.id); setMsg(''); const nx = nextDay(p); setOpen(nx < 0 ? 0 : nx) }
+  const catOf = (p: Plan) => p.category || 'General'
+  if (!plan) {
+    const my = plans.filter(isStarted); const tb = tab || (my.length ? 'my' : 'browse'); const cats = Array.from(new Set(plans.map(catOf)))
+    const row = (p: Plan) => { const n = doneCount(p); const on = isStarted(p); return <button key={p.id} className={card + ' block w-full text-left'} onClick={() => openPlan(p)}><b className="sd-gold">{on ? '✓ ' : ''}{p.title}</b>{p.description && <span className="block text-xs opacity-80">{p.description}</span>}<span className="block text-xs opacity-70">{on ? (n >= p.days.length ? 'Completed' : `Continue · Day ${nextDay(p) + 1}`) + ` · ${n}/${p.days.length} days` : `${p.days.length} days · Start plan →`}</span>{on && bar(n, p.days.length)}</button> }
+    return <div className="space-y-3"><h2 className="font-bold">Reading plans</h2>
+      <div className="flex gap-2"><button className={'sd-chip' + (tb === 'my' ? ' on' : '')} onClick={() => setTab('my')}>My plans ({my.length})</button><button className={'sd-chip' + (tb === 'browse' ? ' on' : '')} onClick={() => setTab('browse')}>Browse</button></div>
+      {tb === 'my' ? (my.length ? my.map(row) : <p className="text-sm opacity-70">You have not started a plan yet. Open Browse, choose a plan and tap Start.</p>) : <>
+        {cats.length > 1 && <div className="flex flex-wrap gap-2">{['All', ...cats].map(c => <button key={c} className={'sd-chip' + (cat === c ? ' on' : '')} onClick={() => setCat(c)}>{c}</button>)}</div>}
+        {!plans.length && <p>No plans yet.</p>}
+        {(cat === 'All' ? cats : [cat]).map(c => { const list = plans.filter(p => catOf(p) === c); return list.length > 0 && <div key={c} className="space-y-2">{cat === 'All' && cats.length > 1 && <h3 className="text-xs uppercase opacity-60 pt-1">{c}</h3>}{list.map(row)}</div> })}</>}</div>
+  }
+  const on = isStarted(plan); const nDone = doneCount(plan)
+  const back = <div className="flex justify-between items-center"><button className="text-sm underline" onClick={() => { setSel(''); setMsg('') }}>← All plans</button>{on && <button className="sd-chip" onClick={() => setSw(true)}>⇄ My plans</button>}</div>
+  if (!on) return <div className="space-y-3">{back}<h2 className="font-bold">{plan.title}</h2><p className="text-xs opacity-70">{catOf(plan)} · {plan.days.length} days</p>{plan.description && <p>{plan.description}</p>}
+    <h3 className="font-semibold">What you will read</h3><div className="space-y-1 text-sm opacity-90">{plan.days.slice(0, 10).map((r, i) => <div key={i}>Day {i + 1}: {r.title || reads(r).map(refOf).join(', ')}</div>)}{plan.days.length > 10 && <div className="opacity-60">… and {plan.days.length - 10} more days</div>}</div>
+    <button className="sd-btn w-full" onClick={() => { setStarted({ ...started, [plan.id]: todayStr() }); setMsg(`You started “${plan.title}”. It is now under My plans.`); setTab('my'); setOpen(0) }}>▶ Start this plan</button>
+    <p className="text-xs opacity-60">Your progress is tracked only after you start. Started plans appear under My plans.</p></div>
+  const restart = () => { if (confirm('Restart this plan from Day 1?')) { setItems(items.filter(k => !k.startsWith(plan.id + '|'))); setStarted({ ...started, [plan.id]: todayStr() }); setOpen(0) } }
+  const removePlan = () => { if (confirm('Remove this plan from My plans? Your ticks for it will be cleared.')) { setItems(items.filter(k => !k.startsWith(plan.id + '|'))); const n = { ...started }; delete n[plan.id]; setStarted(n); setSel('') } }
+  return <div className="space-y-3">{back}
+    {sw && <Sheet title="My plans" onClose={() => setSw(false)}>{plans.filter(isStarted).map(q => <button key={q.id} className={'opt' + (q.id === plan.id ? ' on' : '')} onClick={() => { openPlan(q); setSw(false) }}>{q.title}<span className="block text-xs opacity-70">{doneCount(q)}/{q.days.length} days done</span></button>)}</Sheet>}
+    {msg && <div className="sd-card">✓ {msg}</div>}
+    <h2 className="font-bold">{plan.title}</h2><div className="text-xs opacity-70">✓ In My plans{started[plan.id] ? ' · started ' + started[plan.id] : ''} · {nDone} of {plan.days.length} days done{bar(nDone, plan.days.length)}</div>
     {plan.days.map((r, i) => { const ks = keysOf(plan, i); const got = ks.filter(has).length
       return <div key={i} className={card}><button className="w-full flex justify-between gap-2 text-left" onClick={() => setOpen(open === i ? null : i)}><span>{ks.length > 0 && got === ks.length ? '✓ ' : ''}Day {i + 1}: {r.title || reads(r).map(refOf).join(', ')}</span><span className="text-xs opacity-70 whitespace-nowrap">{got}/{ks.length}</span></button>
         {open === i && <div style={readerStyle(settings)} className="mt-3 space-y-4">{speechOK() && <button className="sd-chip" onClick={() => speakDay(r, `${plan.id}|${i}`)}>{talk === `${plan.id}|${i}` ? '■ Stop' : '🔊 Listen to this day'}</button>}
           {r.body && <section><label className="flex items-center gap-2 font-bold sd-gold"><input type="checkbox" checked={has(`${plan.id}|${i}|d`)} onChange={() => tick(`${plan.id}|${i}|d`)} />Devotion</label><p className="whitespace-pre-wrap mt-1">{r.body}</p></section>}
-          {reads(r).map((x, k) => <section key={k}><label className="flex items-center gap-2 font-bold sd-gold"><input type="checkbox" checked={has(`${plan.id}|${i}|r${k}`)} onChange={() => tick(`${plan.id}|${i}|r${k}`)} />{refOf(x)}</label><div className="mt-1 space-y-1">{reading(x)}</div></section>)}</div>}</div> })}</div>
+          {reads(r).map((x, k) => <section key={k}><label className="flex items-center gap-2 font-bold sd-gold"><input type="checkbox" checked={has(`${plan.id}|${i}|r${k}`)} onChange={() => tick(`${plan.id}|${i}|r${k}`)} />{refOf(x)}</label><div className="mt-1 space-y-1">{reading(x)}</div></section>)}</div>}</div> })}
+    <div className="flex gap-2 pt-2"><button className="sd-chip" onClick={restart}>↺ Restart</button><button className="sd-chip" onClick={removePlan}>Remove from My plans</button></div></div>
 }
 
 function PlanAdmin() {
@@ -178,12 +201,13 @@ function PlanAdmin() {
   const create = () => { const n = Math.min(days, ch); if (n < 1) return setM('Days and chapters must be at least 1')
     const list: PDay[] = Array.from({ length: n }, (_, i) => ({ book, from: Math.floor(i * ch / n) + 1, to: Math.floor((i + 1) * ch / n) }))
     setPlans([...plans, { id: 'p' + Date.now(), title, days: list }]); setM(days > ch ? `Made ${n} days (one chapter minimum per day, so it was limited from ${days}).` : `Made ${n} days.`) }
-  return <section className="space-y-2"><h2 className="font-bold">Reading plans</h2><datalist id="books">{BOOK_LIST.map(n => <option key={n} value={n} />)}</datalist>
+  return <section className="space-y-2"><h2 className="font-bold">Reading plans</h2><datalist id="books">{BOOK_LIST.map(n => <option key={n} value={n} />)}</datalist><datalist id="plancats">{Array.from(new Set(plans.map(x => x.category).filter(Boolean))).map(c => <option key={c} value={c} />)}</datalist>
     <div className="flex flex-wrap items-center gap-2 text-sm"><input className="border rounded px-2" value={title} onChange={e => setTitle(e.target.value)} /><input list="books" className="border rounded px-2 w-32" placeholder="Book" value={book} onChange={e => setBook(e.target.value)} />
       <label>Chapters <input type="number" min={1} className="border rounded px-2 w-16 text-black" value={ch} onChange={e => setCh(+e.target.value)} /></label>
       <label>Days <input type="number" min={1} className="border rounded px-2 w-16 text-black" value={days} onChange={e => setDays(+e.target.value)} /></label></div>
     <button className={btn} onClick={create}>Create reading plan</button> <button className={btn} onClick={createSeries}>Create devotional series</button>{m && <p className="text-sm">{m}</p>}
-    {plans.map(p => <div key={p.id} className={card + ' text-sm space-y-2'}><div className="flex gap-2"><input className="flex-1 border rounded px-2" value={p.title} onChange={e => upPlan(p.id, { title: e.target.value })} /><button onClick={() => setOpenId(openId === p.id ? '' : p.id)}>✎ {p.days.length} days</button><button onClick={() => confirm('Delete plan?') && setPlans(plans.filter(x => x.id !== p.id))}>🗑</button></div>
+    {plans.map(p => <div key={p.id} className={card + ' text-sm space-y-2'}><div className="flex gap-2"><input className="flex-1 border rounded px-2" value={p.title} onChange={e => upPlan(p.id, { title: e.target.value })} /><input list="plancats" className="border rounded px-2 w-28" placeholder="Category" value={p.category || ''} onChange={e => upPlan(p.id, { category: e.target.value })} /><button onClick={() => setOpenId(openId === p.id ? '' : p.id)}>✎ {p.days.length} days</button><button onClick={() => confirm('Delete plan?') && setPlans(plans.filter(x => x.id !== p.id))}>🗑</button></div>
+      {openId === p.id && <input className="w-full border rounded px-2" placeholder="Short description of this plan" value={p.description || ''} onChange={e => upPlan(p.id, { description: e.target.value })} />}
       {openId === p.id && p.days.map((d, i) => <div key={i} className="space-y-1 border-t pt-2"><b>Day {i + 1}</b>
         <input className="w-full border rounded px-2" placeholder="Devotion title" value={d.title || ''} onChange={e => upDay(p.id, i, { title: e.target.value })} />
         <textarea className="w-full border rounded px-2" rows={3} placeholder="Devotion text (leave empty for reading only)" value={d.body || ''} onChange={e => upDay(p.id, i, { body: e.target.value })} />
@@ -208,9 +232,14 @@ function Saved() {
 }
 
 function Devotions() {
-  const [d, setD] = useState<Devotion[]>([]); const [local] = useLS<Devotion[] | null>('draftDevotions', null)
-  useEffect(() => { get<Devotion[]>('devotions/devotions.json').then(arr(setD)).catch(() => {}) }, [])
-  return <div className="space-y-3">{d.filter(x => x && x.published).map((x, n) => <article key={x.id || n} className={card}><h3 className="font-semibold">{x.title}</h3><p className="whitespace-pre-wrap">{x.body}</p></article>)}{local && <p className="text-xs opacity-60">Admin drafts exist on this device and are not shown to readers until published via GitHub.</p>}</div>
+  const [d, setD] = useState<Devotion[]>([]); const [cats, setCats] = useState<Cat[]>([]); const [f, setF] = useState('all'); const [local] = useLS<Devotion[] | null>('draftDevotions', null)
+  useEffect(() => { get('devotions/devotions.json').then(arr(setD)).catch(() => {}); get('devotions/categories.json').then(arr(setCats)).catch(() => {}) }, [])
+  const shown = d.filter(x => x && x.published && (f === 'all' || (x.categories || []).includes(f)))
+  const nm = (id: string) => cats.find(c => c.id === id)?.name || id
+  return <div className="space-y-3">{cats.length > 0 && <div className="flex flex-wrap gap-2"><button className={'sd-chip' + (f === 'all' ? ' on' : '')} onClick={() => setF('all')}>All</button>{cats.map(c => <button key={c.id} className={'sd-chip' + (f === c.id ? ' on' : '')} onClick={() => setF(c.id)}>{c.name}</button>)}</div>}
+    {shown.map((x, n) => <article key={x.id || n} className={card}><h3 className="font-semibold">{x.title}</h3>{(x.categories || []).length > 0 && <p className="text-xs opacity-60">{(x.categories || []).map(nm).join(' · ')}</p>}<p className="whitespace-pre-wrap">{x.body}</p></article>)}
+    {!shown.length && <p className="text-sm opacity-70">No devotions here yet.</p>}
+    {local && <p className="text-xs opacity-60">Admin drafts exist on this device and are not shown to readers until published via GitHub.</p>}</div>
 }
 
 function Admin() {
