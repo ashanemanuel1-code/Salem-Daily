@@ -31,6 +31,7 @@ const ICONS: Record<string, string> = {
   devotions: 'M12 7a5 5 0 100 10 5 5 0 000-10zM12 1v3M12 20v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M1 12h3M20 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1',
   plans: 'M5 4h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2zM16 2v4M8 2v4M3 10h18M9 16l2 2 4-4',
   saved: 'M6 3h12v18l-6-4-6 4z',
+  books: 'M4 19.5V5a2 2 0 012-2h13v18H6a2 2 0 01-2-1.5zM8 7h7M8 11h7',
   ask: 'M21 21l-4.3-4.3M11 18a7 7 0 100-14 7 7 0 000 14z',
   settings: 'M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0M14 4v4M8 10v4M16 16v4',
 }
@@ -236,6 +237,64 @@ function PlanAdmin() {
     <button className={btn} onClick={() => save('plans.json', plans)}>Export plans.json</button></section>
 }
 
+type BookMeta = { id: string; title: string; author?: string; category?: string; description?: string; file?: string; license?: string; language?: string }
+type BookData = { chapters: { title: string; paras: string[] }[] }
+
+function Books({ settings }: any) {
+  const [list, setList] = useState<BookMeta[]>([]); const [q, setQ] = useState(''); const [cat, setCat] = useState('All'); const [sel, setSel] = useState(''); const [data, setData] = useState<BookData | null>(null); const [ch, setCh] = useState<number | null>(null)
+  const [prog, setProg] = useLS<Record<string, number>>('bookProg', {}); const [talk, setTalk] = useState(false); const [rate] = useLS<number>('ttsRate', 1)
+  useEffect(() => { get('books/books.json').then(arr(setList)).catch(() => {}) }, [])
+  useEffect(() => { setData(null); setCh(null); if (sel) get<BookData>(`books/${sel}.json`).then(j => setData(j && Array.isArray(j.chapters) ? j : { chapters: [] })).catch(() => setData({ chapters: [] })) }, [sel])
+  useEffect(() => () => stopSpeak(), [])
+  const book = list.find(b => b.id === sel)
+  if (!book) {
+    const cats = Array.from(new Set(list.map(b => b.category || 'General')))
+    const shown = list.filter(b => (cat === 'All' || (b.category || 'General') === cat) && (!q || (b.title + ' ' + (b.author || '')).toLowerCase().includes(q.toLowerCase())))
+    return <div className="space-y-3"><h2 className="font-bold">Books</h2>
+      {list.length > 3 && <input className="w-full rounded-lg px-3 py-2" placeholder="Search books…" value={q} onChange={e => setQ(e.target.value)} />}
+      {cats.length > 1 && <div className="flex flex-wrap gap-2">{['All', ...cats].map(c => <button key={c} className={'sd-chip' + (cat === c ? ' on' : '')} onClick={() => setCat(c)}>{c}</button>)}</div>}
+      {!list.length && <p className="text-sm opacity-70">No books yet. Books added by your church will appear here.</p>}
+      {shown.map(b => <button key={b.id} className={card + ' flex gap-3 w-full text-left items-center'} onClick={() => setSel(b.id)}><span className="text-3xl">📕</span><span><b className="sd-gold">{b.title}</b>{b.author && <span className="block text-xs opacity-70">{b.author}</span>}{prog[b.id] !== undefined && <span className="block text-xs">Continue · Chapter {prog[b.id] + 1}</span>}</span></button>)}</div>
+  }
+  const chs = data?.chapters || []
+  if (ch === null) return <div className="space-y-3"><button className="text-sm underline" onClick={() => setSel('')}>← All books</button>
+    <h2 className="font-bold sd-gold text-lg">{book.title}</h2>{book.author && <p className="text-sm opacity-80">{book.author}</p>}<p className="text-xs opacity-60">{book.category || 'General'}{chs.length ? ` · ${chs.length} chapters` : ''}</p>
+    {book.description && <p className="text-sm">{book.description}</p>}
+    {!data ? <p className="text-sm">Loading…</p> : !chs.length ? <p className="text-sm opacity-70">This book is not ready yet. It appears after the next publish.</p> : <>
+      <button className="sd-btn w-full" onClick={() => { const n = Math.min(prog[book.id] ?? 0, chs.length - 1); setCh(n); setProg({ ...prog, [book.id]: n }) }}>{prog[book.id] !== undefined ? `Continue · Chapter ${prog[book.id] + 1}` : '▶ Start reading'}</button>
+      <h3 className="font-semibold pt-1">Contents</h3>{chs.map((c, i) => <button key={i} className={'opt' + (prog[book.id] === i ? ' on' : '')} onClick={() => { setCh(i); setProg({ ...prog, [book.id]: i }) }}>{c.title}</button>)}</>}
+    {book.file && /\.pdf$/i.test(book.file) && <a className="sd-chip inline-block" href={B + 'books/' + book.file} target="_blank" rel="noreferrer">⬇ Download the PDF</a>}
+    {book.license && <p className="text-xs opacity-50">{book.license}</p>}</div>
+  const c = chs[Math.min(ch, chs.length - 1)]; const last = ch >= chs.length - 1
+  const go = (n: number) => { stopSpeak(); setTalk(false); if (n < 0) return; if (n >= chs.length) { setCh(null); return } setCh(n); setProg({ ...prog, [book.id]: n }); window.scrollTo(0, 0) }
+  const lang = book.language || langOf(c.paras[0] || '')
+  return <div key={ch} className="space-y-3 slide" onTouchStart={e => { touchX = e.touches[0].clientX; touchY = e.touches[0].clientY }} onTouchEnd={e => { const dx = e.changedTouches[0].clientX - touchX; const dy = e.changedTouches[0].clientY - touchY; if (Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy) * 1.5) go(dx < 0 ? ch + 1 : ch - 1) }}>
+    <div className="flex justify-between items-center text-sm"><button className="underline" onClick={() => { stopSpeak(); setTalk(false); setCh(null) }}>← {book.title}</button><span>{ch + 1} / {chs.length}</span></div>
+    <span className="block h-1 rounded bg-white/10"><span className="block h-1 rounded" style={{ width: `${(ch + 1) * 100 / chs.length}%`, background: 'var(--gold)' }} /></span>
+    <div className="flex items-center justify-between gap-2"><h3 className="sd-gold font-bold text-lg">{c.title}</h3>{speechOK() && <button className="sd-chip" onClick={() => { if (talk) { stopSpeak(); setTalk(false) } else { setTalk(true); speak([c.title, ...c.paras], lang, rate, undefined, () => setTalk(false), (m) => { setTalk(false); alert('Could not play the voice (' + (m || 'unknown') + ').') }) } }}>{talk ? '■ Stop' : '🔊 Listen'}</button>}</div>
+    <div style={readerStyle(settings)} className="space-y-3">{c.paras.map((p, i) => <p key={i}>{p}</p>)}</div>
+    <div className="flex gap-2 pt-2"><button className="sd-chip" disabled={ch === 0} onClick={() => go(ch - 1)}>◀ Previous</button><button className="sd-btn flex-1" onClick={() => go(ch + 1)}>{last ? 'Finish ✓' : 'Next chapter ▶'}</button></div>
+    <p className="text-xs opacity-60 text-center">Swipe left for the next chapter, right to go back.</p></div>
+}
+
+function BooksAdmin() {
+  const [bks, setBks] = useLS<BookMeta[] | null>('draftBooks', null)
+  useEffect(() => { if (!bks) get('books/books.json').then(arr(setBks)).catch(() => setBks([])) }, [])
+  if (!bks) return null
+  const up = (i: number, p: Partial<BookMeta>) => setBks(bks.map((x, k) => k === i ? { ...x, ...p } : x))
+  const slug = (t: string) => t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'book'
+  return <section className="space-y-2"><h2 className="font-bold">Books</h2>
+    <datalist id="bookcats">{Array.from(new Set(bks.map(b => b.category).filter(Boolean))).map(c => <option key={c} value={c} />)}</datalist>
+    <p className="text-xs opacity-70">1) Add the book details here. 2) Click Export books.json. 3) On GitHub, upload the PDF into the folder books-src and upload books.json into public/data/books. The site turns the PDF into readable chapters when it publishes. Only add books you have the right to publish.</p>
+    {bks.map((b, i) => <div key={i} className={card + ' text-sm space-y-1'}>
+      <input className="w-full border rounded px-2" placeholder="Title" value={b.title} onChange={e => up(i, { title: e.target.value })} />
+      <div className="flex gap-2"><input className="flex-1 border rounded px-2" placeholder="Author" value={b.author || ''} onChange={e => up(i, { author: e.target.value })} /><input list="bookcats" className="w-32 border rounded px-2" placeholder="Category" value={b.category || ''} onChange={e => up(i, { category: e.target.value })} /></div>
+      <input className="w-full border rounded px-2" placeholder="Exact file name, e.g. pilgrims-progress.pdf" value={b.file || ''} onChange={e => up(i, { file: e.target.value.trim() })} />
+      <textarea className="w-full border rounded px-2" rows={2} placeholder="Short description" value={b.description || ''} onChange={e => up(i, { description: e.target.value })} />
+      <div className="flex gap-2"><input className="flex-1 border rounded px-2" placeholder="Rights, e.g. Public domain" value={b.license || ''} onChange={e => up(i, { license: e.target.value })} /><input className="w-24 border rounded px-2" placeholder="Language" value={b.language || ''} onChange={e => up(i, { language: e.target.value })} /><button onClick={() => confirm('Delete this book entry?') && setBks(bks.filter((_, k) => k !== i))}>🗑</button></div></div>)}
+    <button className={btn} onClick={() => setBks([...bks, { id: '', title: 'New book', file: '' }])}>+ Book</button> <button className={btn} onClick={() => save('books.json', bks.map(b => ({ ...b, id: b.id || slug(b.title) })))}>Export books.json</button></section>
+}
+
 function Saved() {
   const [marks, setMarks] = useLS<Record<string, { color?: string; note?: string; bookmark?: boolean }>>('marks', {})
   const [idx, setIdx] = useState<Entry[]>([]); const [bibles, setBibles] = useState<Record<string, Bible>>({}); const [custom] = useLS<Bible[]>('customBibles', []); const [f, setF] = useState('all')
@@ -277,20 +336,7 @@ function Admin() {
   const importBible = async (f: File) => { try { const j = JSON.parse(await f.text()); const e = validateBible(j); if (e) return setMsg('Invalid: ' + e); setCb([...cb.filter(b => b.meta.id !== j.meta.id), j]); setMsg(`Imported ${j.meta.name} (${j.meta.language}, ${j.books.length} books). Use Export to place it in public/data/bibles/.`) } catch { setMsg('Not valid JSON') } }
   return <div className="space-y-4">
     <p className="text-xs">Local content tool only — not secure authentication. Drafts live in this browser. Export, then upload the files to GitHub (see README).</p>
-    <section className="space-y-2"><h2 className="font-bold">Devotions</h2>
-      {d.map((x, i) => <div key={x.id} className={card + ' space-y-1'}>
-        <input className="w-full border rounded px-2" value={x.title} onChange={e => up(i, { title: e.target.value })} />
-        <textarea className="w-full border rounded px-2" rows={3} value={x.body} onChange={e => up(i, { body: e.target.value })} />
-        <div className="flex flex-wrap gap-2 text-sm">{cats.map(c => <label key={c.id}><input type="checkbox" checked={x.categories.includes(c.id)} onChange={e => up(i, { categories: e.target.checked ? [...x.categories, c.id] : x.categories.filter(k => k !== c.id) })} /> {c.name}</label>)}
-          <label><input type="checkbox" checked={x.published} onChange={e => up(i, { published: e.target.checked })} /> Published</label>
-          <button onClick={() => confirm('Delete?') && setD(d.filter((_, k) => k !== i))}>🗑</button></div></div>)}
-      <button className={btn} onClick={() => setD([...d, { id: 'd' + Date.now(), title: 'New devotion', body: '', categories: [], published: false, date: new Date().toISOString().slice(0, 10) }])}>+ Devotion</button>
-      <button className={btn} onClick={() => save('devotions.json', d)}>Export devotions.json</button>
-      <label className="block text-sm">Import devotions.json <input type="file" accept=".json" onChange={e => e.target.files?.[0] && importDev(e.target.files[0])} /></label>{msg2 && <p className="text-sm">{msg2}</p>}</section>
-    <section className="space-y-2"><h2 className="font-bold">Categories</h2>
-      {cats.map((c, i) => <div key={c.id} className="flex gap-2"><input className="border rounded px-2" value={c.name} onChange={e => setCats(cats.map((x, k) => k === i ? { ...x, name: e.target.value } : x))} /><button onClick={() => setCats(cats.filter((_, k) => k !== i))}>🗑</button></div>)}
-      <button className={btn} onClick={() => setCats([...cats, { id: 'c' + Date.now(), name: 'New category' }])}>+ Category</button>
-      <button className={btn} onClick={() => save('categories.json', cats)}>Export categories.json</button></section>
+    <BooksAdmin />
     <section className="space-y-2"><h2 className="font-bold">Import Bible JSON</h2>
       <input type="file" accept=".json" onChange={e => e.target.files?.[0] && importBible(e.target.files[0])} />
       <label className="block text-sm">Convert a USFX/XML Bible (downloads a ready JSON file) <input type="file" accept=".xml" onChange={e => e.target.files?.[0] && importUsfx(e.target.files[0])} /></label>{msg && <p className="text-sm">{msg}</p>}
@@ -444,12 +490,12 @@ export default function App() {
   const restore = async (f: File) => { try { const j = JSON.parse(await f.text()); Object.entries(j).forEach(([k, v]) => localStorage.setItem(k, v as string)); location.reload() } catch { alert('Invalid backup') } }
   return <div className="min-h-screen"><div className="max-w-2xl mx-auto p-4 space-y-4"><SelReader rate={ttsRate} />
     <header className="flex justify-between items-center"><h1 className="text-xl font-bold sd-gold flex items-center gap-2"><img src={B + 'icons/icon.png'} alt="" className="w-9 h-9 rounded-xl glow" />{theme.appName || 'Salem Daily'}</h1>
-      <nav className="flex flex-wrap justify-end gap-x-3 text-sm">{[['', 'Home'], ['bible', 'Bible'], ['devotions', 'Devotions'], ['plans', 'Plans'], ['ask', 'Ask'], ['settings', 'Settings']].map(([r, l]) => <a key={r} href={'#/' + r} className={'tab' + (tab === r ? ' active' : '')}><svg viewBox="0 0 24 24" aria-hidden="true"><path d={ICONS[r]} /></svg><span>{l}</span></a>)}</nav></header>
+      <nav className="flex flex-wrap justify-end gap-x-3 text-sm">{[['', 'Home'], ['bible', 'Bible'], ['books', 'Books'], ['plans', 'Plans'], ['ask', 'Ask'], ['settings', 'Settings']].map(([r, l]) => <a key={r} href={'#/' + r} className={'tab' + (tab === r ? ' active' : '')}><svg viewBox="0 0 24 24" aria-hidden="true"><path d={ICONS[r]} /></svg><span>{l}</span></a>)}</nav></header>
     {tab === 'plans' && opts.length > 1 && <BiblePicker opts={opts} settings={settings} setSettings={setSettings} block />}
     <div key={tab} className="rise space-y-4">
-    {tab === '' && <div className="space-y-3">{heroSrc && <div className="overflow-hidden rounded-2xl"><img key={heroSrc} src={B + heroSrc} alt="" className="w-full max-h-64 object-cover kenburns rise" onError={e => (e.currentTarget.style.display = 'none')} /></div>}<h2 className="text-lg rise">Hello, {name}</h2>{theme.tagline && <p className="text-sm opacity-70">{theme.tagline}</p>}{verse && <blockquote className={card + ' rise'} style={{ animationDelay: '.3s' }}>{verse.text}<footer className="text-sm opacity-70">— {verse.ref}</footer></blockquote>}<div className="grid grid-cols-2 gap-3">{[['ask', '🔎', 'Ask & search'], ['bible', '📖', 'Read the Bible'], ['plans', '📅', 'My plans'], ['devotions', '🌅', 'Devotions'], ['games', '🎮', 'Word game'], ['saved', '🔖', 'Saved verses']].map(([r, e, l]) => <a key={r} href={'#/' + r} className="sd-card text-center rise"><div className="text-2xl">{e}</div><div className="text-sm">{l}</div></a>)}</div></div>}
+    {tab === '' && <div className="space-y-3">{heroSrc && <div className="overflow-hidden rounded-2xl"><img key={heroSrc} src={B + heroSrc} alt="" className="w-full max-h-64 object-cover kenburns rise" onError={e => (e.currentTarget.style.display = 'none')} /></div>}<h2 className="text-lg rise">Hello, {name}</h2>{theme.tagline && <p className="text-sm opacity-70">{theme.tagline}</p>}{verse && <blockquote className={card + ' rise'} style={{ animationDelay: '.3s' }}>{verse.text}<footer className="text-sm opacity-70">— {verse.ref}</footer></blockquote>}<div className="grid grid-cols-2 gap-3">{[['ask', '🔎', 'Ask & search'], ['bible', '📖', 'Read the Bible'], ['plans', '📅', 'My plans'], ['books', '📚', 'Books'], ['games', '🎮', 'Word game'], ['saved', '🔖', 'Saved verses']].map(([r, e, l]) => <a key={r} href={'#/' + r} className="sd-card text-center rise"><div className="text-2xl">{e}</div><div className="text-sm">{l}</div></a>)}</div></div>}
     {tab === 'bible' && <Bible settings={settings} setSettings={setSettings} opts={opts} />}
-    {tab === 'devotions' && <Devotions />}
+    {(tab === 'books' || tab === 'devotions') && <Books settings={settings} />}
     {tab === 'plans' && <Plans settings={settings} />}
     {tab === 'saved' && <Saved />}
     {tab === 'games' && <Games />}
