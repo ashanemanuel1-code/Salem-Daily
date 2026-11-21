@@ -1,0 +1,562 @@
+[
+ {
+  "name": "Solomon",
+  "emoji": "👑",
+  "intro": "The wisest king of Israel. Test what you know about Solomon.",
+  "words": [
+   [
+    "WISDOM",
+    "What Solomon asked God for"
+   ],
+   [
+    "TEMPLE",
+    "Solomon built this in Jerusalem"
+   ],
+   [
+    "PROVERBS",
+    "Book of wise sayings, mostly by Solomon"
+   ],
+   [
+    "SHEBA",
+    "Queen who visited Solomon"
+   ],
+   [
+    "JERUSALEM",
+    "City where Solomon reigned"
+   ]
+  ],
+  "quiz": [
+   [
+    "Who was Solomon's father?",
+    "David",
+    [
+     "Saul",
+     "Abraham",
+     "Samuel"
+    ]
+   ],
+   [
+    "What did Solomon ask God for?",
+    "Wisdom",
+    [
+     "Riches",
+     "Long life",
+     "Victory over enemies"
+    ]
+   ],
+   [
+    "Which book is largely Solomon's collected sayings?",
+    "Proverbs",
+    [
+     "Psalms",
+     "Isaiah",
+     "Genesis"
+    ]
+   ]
+  ]
+ },
+ {
+  "name": "David",
+  "emoji": "🎵",
+  "intro": "From shepherd boy to king. How well do you know David?",
+  "words": [
+   [
+    "SHEPHERD",
+    "David's work as a boy"
+   ],
+   [
+    "GOLIATH",
+    "The giant David defeated"
+   ],
+   [
+    "HARP",
+    "Instrument David played for Saul"
+   ],
+   [
+    "JONATHAN",
+    "David's close friend, son of Saul"
+   ],
+   [
+    "BETHLEHEM",
+    "David's hometown"
+   ]
+  ],
+  "quiz": [
+   [
+    "What did David use against Goliath?",
+    "A sling and a stone",
+    [
+     "A sword",
+     "A spear",
+     "A bow"
+    ]
+   ],
+   [
+    "Who anointed David as king?",
+    "Samuel",
+    [
+     "Eli",
+     "Nathan",
+     "Moses"
+    ]
+   ],
+   [
+    "Which king pursued David?",
+    "Saul",
+    [
+     "Herod",
+     "Ahab",
+     "Solomon"
+    ]
+   ]
+  ]
+ },
+ {
+  "name": "Moses",
+  "emoji": "🔥",
+  "intro": "The man who led Israel out of Egypt.",
+  "words": [
+   [
+    "PHARAOH",
+    "Ruler who refused to let Israel go"
+   ],
+   [
+    "EXODUS",
+    "Israel's journey out of Egypt"
+   ],
+   [
+    "SINAI",
+    "Mountain where the law was given"
+   ],
+   [
+    "MANNA",
+    "Bread from heaven"
+   ],
+   [
+    "PASSOVER",
+    "Feast remembering the angel passing over"
+   ]
+  ],
+  "quiz": [
+   [
+    "How many plagues struck Egypt?",
+    "Ten",
+    [
+     "Seven",
+     "Twelve",
+     "Forty"
+    ]
+   ],
+   [
+    "How did God first speak to Moses in Midian?",
+    "From a burning bush",
+    [
+     "In a whirlwind",
+     "In a dream",
+     "By an angel's trumpet"
+    ]
+   ],
+   [
+    "Who was Moses' brother and spokesman?",
+    "Aaron",
+    [
+     "Joshua",
+     "Caleb",
+     "Eleazar"
+    ]
+   ]
+  ]
+ },
+ {
+  "name": "Miracles of Jesus",
+  "emoji": "✨",
+  "intro": "Signs and wonders from the Gospels.",
+  "words": [
+   [
+    "LAZARUS",
+    "Raised from the dead after four days"
+   ],
+   [
+    "CANA",
+    "Town where water became wine"
+   ],
+   [
+    "WINE",
+    "Water became this at a wedding"
+   ],
+   [
+    "STORM",
+    "Jesus calmed this on the lake"
+   ],
+   [
+    "BARTIMAEUS",
+    "Blind beggar healed near Jericho"
+   ]
+  ],
+  "quiz": [
+   [
+    "How many loaves fed the five thousand?",
+    "Five",
+    [
+     "Two",
+     "Seven",
+     "Twelve"
+    ]
+   ],
+   [
+    "Who was raised after four days in the tomb?",
+    "Lazarus",
+    [
+     "Jairus",
+     "Tabitha",
+     "Eutychus"
+    ]
+   ],
+   [
+    "Where did Jesus turn water into wine?",
+    "Cana",
+    [
+     "Nazareth",
+     "Capernaum",
+     "Bethany"
+    ]
+   ]
+  ]
+ },
+ {
+  "name": "Parables",
+  "emoji": "📖",
+  "intro": "Stories Jesus told to teach about the kingdom.",
+  "words": [
+   [
+    "SOWER",
+    "Scattered seed on different soils"
+   ],
+   [
+    "SAMARITAN",
+    "Helped the man beaten on the road"
+   ],
+   [
+    "PRODIGAL",
+    "Son who left home and returned"
+   ],
+   [
+    "MUSTARD",
+    "Tiny seed the kingdom is compared to"
+   ],
+   [
+    "TALENTS",
+    "Money entrusted to servants"
+   ]
+  ],
+  "quiz": [
+   [
+    "Who stopped to help the injured man?",
+    "A Samaritan",
+    [
+     "A priest",
+     "A Levite",
+     "A Pharisee"
+    ]
+   ],
+   [
+    "How many sheep did the shepherd leave to find the lost one?",
+    "Ninety-nine",
+    [
+     "Ten",
+     "Fifty",
+     "One hundred"
+    ]
+   ],
+   [
+    "The wise builder built his house on...",
+    "Rock",
+    [
+     "Sand",
+     "A hill",
+     "Water"
+    ]
+   ]
+  ]
+ },
+ {
+  "name": "Women of Faith",
+  "emoji": "🌸",
+  "intro": "Courageous women of the Bible.",
+  "words": [
+   [
+    "RUTH",
+    "Moabite who stayed with Naomi"
+   ],
+   [
+    "ESTHER",
+    "Queen who saved her people"
+   ],
+   [
+    "DEBORAH",
+    "Judge and prophetess"
+   ],
+   [
+    "MARY",
+    "Mother of Jesus"
+   ],
+   [
+    "LYDIA",
+    "Seller of purple cloth in Philippi"
+   ]
+  ],
+  "quiz": [
+   [
+    "Who said, 'Where you go I will go'?",
+    "Ruth",
+    [
+     "Esther",
+     "Hannah",
+     "Sarah"
+    ]
+   ],
+   [
+    "Who was Samuel's mother?",
+    "Hannah",
+    [
+     "Sarah",
+     "Rachel",
+     "Leah"
+    ]
+   ],
+   [
+    "Who hid the spies in Jericho?",
+    "Rahab",
+    [
+     "Deborah",
+     "Miriam",
+     "Jael"
+    ]
+   ]
+  ]
+ },
+ {
+  "name": "Prophets",
+  "emoji": "📜",
+  "intro": "Voices God sent to His people.",
+  "words": [
+   [
+    "ISAIAH",
+    "Prophet who wrote of the suffering servant"
+   ],
+   [
+    "JEREMIAH",
+    "The weeping prophet"
+   ],
+   [
+    "ELIJAH",
+    "Called fire down on Mount Carmel"
+   ],
+   [
+    "DANIEL",
+    "Survived the lions' den"
+   ],
+   [
+    "JONAH",
+    "Swallowed by a great fish"
+   ]
+  ],
+  "quiz": [
+   [
+    "Which prophet was taken up in a whirlwind?",
+    "Elijah",
+    [
+     "Elisha",
+     "Isaiah",
+     "Moses"
+    ]
+   ],
+   [
+    "Who interpreted Nebuchadnezzar's dreams?",
+    "Daniel",
+    [
+     "Ezekiel",
+     "Amos",
+     "Hosea"
+    ]
+   ],
+   [
+    "Which prophet was sent to Nineveh?",
+    "Jonah",
+    [
+     "Joel",
+     "Amos",
+     "Hosea"
+    ]
+   ]
+  ]
+ },
+ {
+  "name": "Paul",
+  "emoji": "✉️",
+  "intro": "The apostle who carried the gospel across the world.",
+  "words": [
+   [
+    "DAMASCUS",
+    "Road where Paul met Jesus"
+   ],
+   [
+    "TARSUS",
+    "Paul's hometown"
+   ],
+   [
+    "TIMOTHY",
+    "Young co-worker Paul mentored"
+   ],
+   [
+    "ROMANS",
+    "Letter explaining the gospel to Rome"
+   ],
+   [
+    "PHILIPPI",
+    "City where Paul and Silas sang in prison"
+   ]
+  ],
+  "quiz": [
+   [
+    "What was Paul's name before?",
+    "Saul",
+    [
+     "Silas",
+     "Simon",
+     "Stephen"
+    ]
+   ],
+   [
+    "Which letter lists the fruit of the Spirit?",
+    "Galatians",
+    [
+     "Romans",
+     "Ephesians",
+     "Hebrews"
+    ]
+   ],
+   [
+    "Who traveled with Paul on his second journey?",
+    "Silas",
+    [
+     "Peter",
+     "John",
+     "Andrew"
+    ]
+   ]
+  ]
+ },
+ {
+  "name": "Creation and Beginnings",
+  "emoji": "🌍",
+  "intro": "The first book of the Bible.",
+  "words": [
+   [
+    "GENESIS",
+    "The first book of the Bible"
+   ],
+   [
+    "EDEN",
+    "The garden where Adam and Eve lived"
+   ],
+   [
+    "SABBATH",
+    "The day God rested"
+   ],
+   [
+    "RAINBOW",
+    "Sign of God's promise after the flood"
+   ],
+   [
+    "ABRAHAM",
+    "Father of many nations"
+   ]
+  ],
+  "quiz": [
+   [
+    "What did God create on the first day?",
+    "Light",
+    [
+     "Land",
+     "Animals",
+     "The sun and moon"
+    ]
+   ],
+   [
+    "On which day did God create people?",
+    "The sixth day",
+    [
+     "The third day",
+     "The fourth day",
+     "The seventh day"
+    ]
+   ],
+   [
+    "How many days and nights did the flood rains fall?",
+    "Forty",
+    [
+     "Seven",
+     "Ten",
+     "One hundred"
+    ]
+   ]
+  ]
+ },
+ {
+  "name": "Psalms and Praise",
+  "emoji": "🎶",
+  "intro": "Songs of worship from the Psalms.",
+  "words": [
+   [
+    "PSALMS",
+    "Book of 150 songs and prayers"
+   ],
+   [
+    "HALLELUJAH",
+    "Means praise the Lord"
+   ],
+   [
+    "HOSANNA",
+    "Cry of praise as Jesus entered Jerusalem"
+   ],
+   [
+    "WORSHIP",
+    "Honoring God with song and heart"
+   ],
+   [
+    "ZION",
+    "The holy hill of God"
+   ]
+  ],
+  "quiz": [
+   [
+    "How many psalms are in the Bible?",
+    "150",
+    [
+     "100",
+     "120",
+     "200"
+    ]
+   ],
+   [
+    "Psalm 23 begins, 'The Lord is my...'",
+    "Shepherd",
+    [
+     "Rock",
+     "Light",
+     "King"
+    ]
+   ],
+   [
+    "What is the longest chapter in the Bible?",
+    "Psalm 119",
+    [
+     "Psalm 23",
+     "Isaiah 53",
+     "Genesis 1"
+    ]
+   ]
+  ]
+ }
+]
