@@ -244,11 +244,10 @@ function Devotions() {
 
 function Admin() {
   const [d, setD] = useLS<Devotion[] | null>('draftDevotions', null); const [cats, setCats] = useLS<Cat[] | null>('draftCats', null)
-  const [cb, setCb] = useLS<Bible[]>('customBibles', []); const [msg, setMsg] = useState('')
+  const [cb, setCb] = useLS<Bible[]>('customBibles', []); const [msg, setMsg] = useState(''); const [msg2, setMsg2] = useState('')
   useEffect(() => { if (!d) get<Devotion[]>('devotions/devotions.json').then(arr(setD)); if (!cats) get<Cat[]>('devotions/categories.json').then(arr(setCats)) }, [])
   if (!d || !cats) return <p>Loading…</p>
   const up = (i: number, p: Partial<Devotion>) => setD(d.map((x, k) => k === i ? { ...x, ...p } : x))
-  const [msg2, setMsg2] = useState('')
   const importDev = async (f: File) => { try { const j = JSON.parse(await f.text()); if (!Array.isArray(j) || j.some((x: any) => !x.id || !x.title || typeof x.body !== 'string')) return setMsg2('Invalid file: it must be a list where every devotion has id, title and body'); setD(j.map((x: any) => ({ categories: [], published: false, date: new Date().toISOString().slice(0, 10), ...x }))); setMsg2(`Loaded ${j.length} devotions. Edit them below, then click Export devotions.json.`) } catch { setMsg2('This is not a valid JSON file') } }
   const importUsfx = async (f: File) => { const r = parseUsfx(await f.text()); if (typeof r === 'string') return setMsg(r)
     const id = prompt('Short id (letters and numbers, e.g. web)', 'web'); const name = prompt('Translation name', 'World English Bible'); const language = prompt('Language', 'English'); const license = prompt('License', 'Public domain')
