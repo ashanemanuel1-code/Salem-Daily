@@ -37,6 +37,7 @@ const ICONS: Record<string, string> = {
 const LANGCODE: Record<string, string> = { english: 'en-US', tamil: 'ta-IN', sinhala: 'si-LK' }
 const canSpeak = typeof window !== 'undefined' && 'speechSynthesis' in window
 let tk = 0
+let touchX = 0, touchY = 0
 let ntts: any
 let nActive = false
 const nativeTTS = () => { try { const c = (window as any).Capacitor; if (!c?.isNativePlatform?.()) return null; if (c.Plugins?.TextToSpeech) return c.Plugins.TextToSpeech; if (typeof c.registerPlugin === 'function') { if (!ntts) ntts = c.registerPlugin('TextToSpeech'); return ntts } } catch { /* no native voice */ } return null }
@@ -135,7 +136,7 @@ function Bible({ settings, setSettings, opts }: { settings: any; setSettings: an
 
 function Plans({ settings }: { settings: any }) {
   const [plans, setPlans] = useState<Plan[]>([]); const [sel, setSel] = useState(''); const [open, setOpen] = useState<number | null>(null); const [sw, setSw] = useState(false)
-  const [items, setItems] = useLS<string[]>('planItems', []); const [talk, setTalk] = useState(''); const [started, setStarted] = useLS<Record<string, string>>('planStarted', {}); const [tab, setTab] = useState(''); const [cat, setCat] = useState('All'); const [msg, setMsg] = useState(''); const [rate] = useLS<number>('ttsRate', 1)
+  const [items, setItems] = useLS<string[]>('planItems', []); const [talk, setTalk] = useState(''); const [started, setStarted] = useLS<Record<string, string>>('planStarted', {}); const [tab, setTab] = useState(''); const [cat, setCat] = useState('All'); const [msg, setMsg] = useState(''); const [run, setRun] = useState<{ day: number; step: number } | null>(null); const [fin, setFin] = useState<number | null>(null); const [rate] = useLS<number>('ttsRate', 1)
   useEffect(() => () => stopSpeak(), [])
   const [idx, setIdx] = useState<Entry[]>([]); const [bible, setBible] = useState<Bible | null>(null); const [custom] = useLS<Bible[]>('customBibles', [])
   useEffect(() => { get<Plan[]>('plans/plans.json').then(arr(setPlans)).catch(() => {}); get<Entry[]>('bibles/index.json').then(arr(setIdx)).catch(() => {}) }, [])
@@ -160,7 +161,7 @@ function Plans({ settings }: { settings: any }) {
   const catOf = (p: Plan) => p.category || 'General'
   if (!plan) {
     const my = plans.filter(isStarted); const tb = tab || (my.length ? 'my' : 'browse'); const cats = Array.from(new Set(plans.map(catOf)))
-    const row = (p: Plan) => { const n = doneCount(p); const on = isStarted(p); return <button key={p.id} className={card + ' block w-full text-left'} onClick={() => openPlan(p)}><b className="sd-gold">{on ? '✓ ' : ''}{p.title}</b>{p.description && <span className="block text-xs opacity-80">{p.description}</span>}<span className="block text-xs opacity-70">{on ? (n >= p.days.length ? 'Completed' : `Continue · Day ${nextDay(p) + 1}`) + ` · ${n}/${p.days.length} days` : `${p.days.length} days · Start plan →`}</span>{on && bar(n, p.days.length)}</button> }
+    const row = (p: Plan) => { const n = doneCount(p); const on = isStarted(p); return <button key={p.id} className={card + ' block w-full text-left'} onClick={() => openPlan(p)}><b className="sd-gold">{on ? '✓ ' : ''}{p.title}</b>{on && <><span className="block text-xs opacity-70">{(n >= p.days.length ? 'Completed' : `Continue · Day ${nextDay(p) + 1}`) + ` · ${n}/${p.days.length} days`}</span>{bar(n, p.days.length)}</>}</button> }
     return <div className="space-y-3"><h2 className="font-bold">Reading plans</h2>
       <div className="flex gap-2"><button className={'sd-chip' + (tb === 'my' ? ' on' : '')} onClick={() => setTab('my')}>My plans ({my.length})</button><button className={'sd-chip' + (tb === 'browse' ? ' on' : '')} onClick={() => setTab('browse')}>Browse</button></div>
       {tb === 'my' ? (my.length ? my.map(row) : <p className="text-sm opacity-70">You have not started a plan yet. Open Browse, choose a plan and tap Start.</p>) : <>
@@ -176,15 +177,34 @@ function Plans({ settings }: { settings: any }) {
     <p className="text-xs opacity-60">Your progress is tracked only after you start. Started plans appear under My plans.</p></div>
   const restart = () => { if (confirm('Restart this plan from Day 1?')) { setItems(items.filter(k => !k.startsWith(plan.id + '|'))); setStarted({ ...started, [plan.id]: todayStr() }); setOpen(0) } }
   const removePlan = () => { if (confirm('Remove this plan from My plans? Your ticks for it will be cleared.')) { setItems(items.filter(k => !k.startsWith(plan.id + '|'))); const n = { ...started }; delete n[plan.id]; setStarted(n); setSel('') } }
+  const stepsOf = (r: PDay) => { const st: { kind: string; k: number; label: string }[] = []; if (r.body) st.push({ kind: 'd', k: 0, label: 'Devotion' }); reads(r).forEach((x, k) => st.push({ kind: 'r', k, label: refOf(x) })); return st }
+  const keyOf = (i: number, st: { kind: string; k: number }) => `${plan.id}|${i}|${st.kind === 'd' ? 'd' : 'r' + st.k}`
+  const openDay = (i: number) => { const steps = stepsOf(plan.days[i]); const f = steps.findIndex(x => !has(keyOf(i, x))); setRun({ day: i, step: f < 0 ? 0 : f }) }
+  const trackMsg = () => { const sd = started[plan.id]; if (!sd) return ''; const n = doneCount(plan); const exp = Math.min(plan.days.length, Math.max(1, dayNum(todayStr()) - dayNum(sd) + 1)); return n > exp ? 'You are ahead of schedule 🌟' : n === exp ? 'You are on track ✓ No days missed.' : `You are ${exp - n} day${exp - n > 1 ? 's' : ''} behind. Catch up when you can.` }
+  const speakTexts = (texts: string[], key: string) => { if (talk === key) { stopSpeak(); setTalk(''); return } setTalk(key); speak(texts, bible?.meta.language || 'english', rate, undefined, () => setTalk(''), (m) => { setTalk(''); alert('Could not play the voice (' + (m || 'unknown') + '). Check that a voice for this language is installed in your phone settings (Text-to-speech).') }) }
+  if (run && plan.days[run.day]) {
+    const r = plan.days[run.day]; const steps = stepsOf(r); const idx = Math.min(run.step, Math.max(steps.length - 1, 0)); const st = steps[idx]; const last = idx >= steps.length - 1
+    const go = (d: number) => { stopSpeak(); setTalk(''); setRun({ day: run.day, step: idx + d }) }
+    const nextStep = () => { stopSpeak(); setTalk(''); if (st && !has(keyOf(run.day, st))) setItems([...items, keyOf(run.day, st)]); if (last) { setFin(run.day); setRun(null) } else go(1) }
+    const prev = () => { if (idx > 0) go(-1) }
+    return <div key={run.day + '-' + idx} className="space-y-3 slide" onTouchStart={e => { touchX = e.touches[0].clientX; touchY = e.touches[0].clientY }} onTouchEnd={e => { const dx = e.changedTouches[0].clientX - touchX; const dy = e.changedTouches[0].clientY - touchY; if (Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy) * 1.5) { if (dx < 0) nextStep(); else prev() } }}>
+      <div className="flex justify-between items-center text-sm"><button className="underline" onClick={() => { stopSpeak(); setTalk(''); setRun(null) }}>← {plan.title}</button><span>Day {run.day + 1} of {plan.days.length}</span></div>
+      <div className="flex gap-1">{steps.map((_, k) => <span key={k} className="h-1.5 flex-1 rounded" style={{ background: k <= idx ? 'var(--gold)' : 'rgba(255,255,255,.15)' }} />)}</div>
+      {!st ? <p className="text-sm opacity-70">Nothing to read on this day.</p> : <div className="space-y-3"><div className="flex items-center justify-between gap-2"><h3 className="sd-gold font-bold text-lg">{st.kind === 'd' ? (r.title || 'Devotion') : st.label}</h3>{speechOK() && <button className="sd-chip" onClick={() => speakTexts(st.kind === 'd' ? [r.title || '', r.body || ''].filter(Boolean) : textsOf(reads(r)[st.k]), 'step')}>{talk === 'step' ? '■ Stop' : '🔊 Listen'}</button>}</div>
+        {st.kind === 'd' ? <p style={readerStyle(settings)} className="whitespace-pre-wrap">{r.body}</p> : <div style={readerStyle(settings)} className="space-y-1">{reading(reads(r)[st.k])}</div>}</div>}
+      <div className="flex gap-2 pt-2"><button className="sd-chip" disabled={idx === 0} onClick={prev}>◀ Back</button><button className="sd-btn flex-1" onClick={nextStep}>{last ? 'Finish day ✓' : 'Next ▶'}</button></div>
+      <p className="text-xs opacity-60 text-center">Tap Next, or swipe left. Swipe right to go back.</p></div>
+  }
+  const total = plan.days.length; const nx = nextDay(plan)
   return <div className="space-y-3">{back}
     {sw && <Sheet title="My plans" onClose={() => setSw(false)}>{plans.filter(isStarted).map(q => <button key={q.id} className={'opt' + (q.id === plan.id ? ' on' : '')} onClick={() => { openPlan(q); setSw(false) }}>{q.title}<span className="block text-xs opacity-70">{doneCount(q)}/{q.days.length} days done</span></button>)}</Sheet>}
+    {fin !== null && <Sheet title={`🎉 Day ${fin + 1} complete!`} onClose={() => setFin(null)}><p className="mb-2">{doneCount(plan)} of {total} days complete.</p><p className="mb-2">{fin + 1 < total ? `Tomorrow: Day ${fin + 2} — ${plan.days[fin + 1].title || reads(plan.days[fin + 1]).map(refOf).join(', ')}` : 'You have finished the whole plan! 🎊'}</p>{trackMsg() && <p className="mb-3 sd-gold">{trackMsg()}</p>}<button className="sd-btn w-full mb-2" onClick={() => setFin(null)}>Done</button>{fin + 1 < total && <button className="sd-chip" onClick={() => { const d = fin + 1; setFin(null); openDay(d) }}>Read Day {fin + 2} now</button>}</Sheet>}
     {msg && <div className="sd-card">✓ {msg}</div>}
-    <h2 className="font-bold">{plan.title}</h2><div className="text-xs opacity-70">✓ In My plans{started[plan.id] ? ' · started ' + started[plan.id] : ''} · {nDone} of {plan.days.length} days done{bar(nDone, plan.days.length)}</div>
+    <h2 className="font-bold">{plan.title}</h2><div className="text-xs opacity-70">✓ In My plans{started[plan.id] ? ' · started ' + started[plan.id] : ''} · {nDone} of {total} days done{bar(nDone, total)}</div>
+    {trackMsg() && <p className="text-sm sd-gold">{trackMsg()}</p>}
+    <button className="sd-btn w-full" onClick={() => openDay(nx < 0 ? 0 : nx)}>{nDone === 0 ? '▶ Start Day 1' : nx < 0 ? '↺ Review from Day 1' : `Continue · Day ${nx + 1}`}</button>
     {plan.days.map((r, i) => { const ks = keysOf(plan, i); const got = ks.filter(has).length
-      return <div key={i} className={card}><button className="w-full flex justify-between gap-2 text-left" onClick={() => setOpen(open === i ? null : i)}><span>{ks.length > 0 && got === ks.length ? '✓ ' : ''}Day {i + 1}: {r.title || reads(r).map(refOf).join(', ')}</span><span className="text-xs opacity-70 whitespace-nowrap">{got}/{ks.length}</span></button>
-        {open === i && <div style={readerStyle(settings)} className="mt-3 space-y-4">{speechOK() && <button className="sd-chip" onClick={() => speakDay(r, `${plan.id}|${i}`)}>{talk === `${plan.id}|${i}` ? '■ Stop' : '🔊 Listen to this day'}</button>}
-          {r.body && <section><label className="flex items-center gap-2 font-bold sd-gold"><input type="checkbox" checked={has(`${plan.id}|${i}|d`)} onChange={() => tick(`${plan.id}|${i}|d`)} />Devotion</label><p className="whitespace-pre-wrap mt-1">{r.body}</p></section>}
-          {reads(r).map((x, k) => <section key={k}><label className="flex items-center gap-2 font-bold sd-gold"><input type="checkbox" checked={has(`${plan.id}|${i}|r${k}`)} onChange={() => tick(`${plan.id}|${i}|r${k}`)} />{refOf(x)}</label><div className="mt-1 space-y-1">{reading(x)}</div></section>)}</div>}</div> })}
+      return <button key={i} className={card + ' flex w-full justify-between gap-2 text-left'} onClick={() => openDay(i)}><span>{ks.length > 0 && got === ks.length ? '✓ ' : ''}Day {i + 1}: {r.title || reads(r).map(refOf).join(', ')}</span><span className="text-xs opacity-70 whitespace-nowrap">{got}/{ks.length}</span></button> })}
     <div className="flex gap-2 pt-2"><button className="sd-chip" onClick={restart}>↺ Restart</button><button className="sd-chip" onClick={removePlan}>Remove from My plans</button></div></div>
 }
 

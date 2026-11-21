@@ -47,3 +47,5 @@ body{background-attachment:scroll!important}
 .glow{animation:none!important;filter:none!important;box-shadow:0 0 14px rgba(212,160,23,.55)}
 .kenburns{animation:rise .8s ease both!important}
 @media (max-width:640px){header nav{-webkit-backdrop-filter:none!important;backdrop-filter:none!important;background:rgba(22,17,6,.97)!important}html[data-theme=light] header nav{background:rgba(255,250,235,.98)!important}}
+@keyframes slidein{from{opacity:0;transform:translateX(28px)}to{opacity:1;transform:none}}
+.slide{animation:slidein .3s ease both}
