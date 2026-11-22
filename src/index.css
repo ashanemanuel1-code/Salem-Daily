@@ -72,3 +72,8 @@ header nav{display:grid!important;grid-template-columns:repeat(6,minmax(0,1fr));
 .tab svg{width:20px;height:20px}
 .max-w-2xl{padding-bottom:calc(6.8rem + env(safe-area-inset-bottom))!important}
 }
+.verse-card{position:relative;overflow:hidden;cursor:pointer;background:linear-gradient(135deg,rgba(212,160,23,.30),rgba(255,255,255,.04) 55%,rgba(212,160,23,.16));box-shadow:0 0 34px rgba(212,160,23,.22);transition:transform .15s}
+.verse-card:active{transform:scale(.985)}
+.verse-card::before{content:'\201C';position:absolute;top:-20px;right:14px;font-size:7rem;font-family:Georgia,serif;color:rgba(212,160,23,.25);line-height:1;pointer-events:none}
+.verse-text{font-family:Georgia,'Times New Roman',serif;font-size:1.2rem;line-height:1.55;margin:.6rem 0}
+html[data-theme=light] .verse-card{background:linear-gradient(135deg,#fff3cf,#fff)}

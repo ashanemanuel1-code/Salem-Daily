@@ -121,7 +121,7 @@ function Bible({ settings, setSettings, opts }: { settings: any; setSettings: an
   const startReading = (vs: string[], off = 0) => { if (!bible) return; setPlaying(true); speak(vs, bible.meta.language, rate, (i: number) => setCur(i + off), () => { setCur(-1); setPlaying(false); if (auto) advance() }, (m) => { setCur(-1); setPlaying(false); alert('Could not play the voice (' + (m || 'unknown') + '). Check that a ' + bible.meta.language + ' voice is installed in your phone settings (Text-to-speech).') }) }
   useEffect(() => { if (!resume || !bible) return; setResume(false); startReading(bible.books[bi]?.chapters[ci] || []) }, [resume])
   useEffect(() => () => stopSpeak(), [])
-  useEffect(() => { if (!bible) return; const g = ls<any>('goto', null); if (g) { const k = bible.books.findIndex(b => b.name === g.book); if (k >= 0) { setBi(k); setCi(g.ch - 1) } localStorage.removeItem('sd:goto') } }, [bible])
+  useEffect(() => { if (!bible) return; const g = ls<any>('goto', null); if (g) { const k = bible.books.findIndex(b => b.name === g.book); if (k >= 0) { setBi(k); setCi(g.ch - 1); if (g.v) { setCur(g.v - 1); setTimeout(() => setCur(-1), 4500) } } localStorage.removeItem('sd:goto') } }, [bible])
   if (!bible) return <p>Loading Bible… (no translation available yet — import one in Admin)</p>
   const book = bible.books[bi] ?? bible.books[0]; const verses = book.chapters[ci] ?? []; const play = () => startReading(verses); const playFrom = (n: number) => startReading(verses.slice(n), n); const changeRate = (r: number) => { setRate(r); localStorage.setItem('sd:ttsRate', JSON.stringify(r)); if (playing) { const from = Math.max(cur, 0); startReading(verses.slice(from), from) } }
   const hits = q.length > 2 ? bible.books.flatMap(b => b.chapters.flatMap((c, i) => c.map((t, v) => ({ b: b.name, i, v, t })))).filter(x => x.t.toLowerCase().includes(q.toLowerCase())).slice(0, 30) : []
@@ -359,7 +359,7 @@ function Admin() {
 
 const readerStyle = (st: any) => ({ fontSize: st.font, lineHeight: st.spacing, fontFamily: st.serif ? 'Georgia, "Times New Roman", serif' : undefined })
 
-function SettingsPage({ name, setName, settings, setSettings, opts, restore, theme }: any) {
+function SettingsPage({ name, setName, settings, setSettings, opts, restore, theme, remind, setRemind }: any) {
   const [rate, setRate] = useLS<number>('ttsRate', 1); const [gender, setGender] = useLS<string>('ttsGender', 'any')
   const up = (p: object) => setSettings({ ...settings, ...p })
   const row = 'flex items-center justify-between gap-3 py-1'
@@ -373,6 +373,10 @@ function SettingsPage({ name, setName, settings, setSettings, opts, restore, the
     <div className="sd-card space-y-3"><h3 className="sd-gold font-semibold">Voice</h3>
       <div className="flex gap-2">{[['any', 'Default'], ['f', 'Female'], ['m', 'Male']].map(([g, l]) => <button key={g} className={'sd-chip' + (gender === g ? ' on' : '')} onClick={() => { localStorage.setItem('sd:ttsGender', JSON.stringify(g)); setGender(g) }}>{l}</button>)}</div>
       <label className={row}>Reading speed<SpeedPicker rate={rate} set={setRate} /></label></div>
+    <div className="sd-card space-y-3"><h3 className="sd-gold font-semibold">Daily verse reminder</h3>
+      {notif() ? <><label className={row}>Show the verse of the day<input type="checkbox" checked={remind.on} onChange={e => setRemind({ ...remind, on: e.target.checked })} /></label>
+        {remind.on && <label className={row}>Time<input type="time" className="rounded-lg px-2 py-1" value={remind.time} onChange={e => setRemind({ ...remind, time: e.target.value || '07:00' })} /></label>}
+        <p className="text-xs opacity-60">A notification with the verse appears on your lock screen every day.</p></> : <p className="text-xs opacity-60">Daily lock-screen reminders work in the Android app. On any phone you can save the verse as a picture from the Home page and use it as your wallpaper.</p>}</div>
     <div className="sd-card space-y-2"><h3 className="sd-gold font-semibold">Reading</h3>
       {opts.length > 0 && <div className={row}>Bible<BiblePicker opts={opts} settings={settings} setSettings={setSettings} /></div>}
       <label className={row}>Text size {settings.font}px<input type="range" min={14} max={32} value={settings.font} onChange={e => up({ font: +e.target.value })} /></label>
@@ -561,6 +565,46 @@ function Ask({ settings, theme, opts }: any) {
     <p className="text-xs opacity-60 text-center">{bible ? bible.meta.name + ' · ' : ''}This helper finds Scripture for you. It does not interpret it. For deeper questions, speak with your pastor.</p></div>
 }
 
+const VOTD = ['John 3:16', 'Psalm 23:1', 'Philippians 4:13', 'Romans 8:28', 'Proverbs 3:5', 'Jeremiah 29:11', 'Isaiah 41:10', 'Matthew 11:28', 'John 14:6', 'Psalm 46:1', 'Romans 12:2', 'Joshua 1:9', '1 John 4:19', 'Psalm 119:105', 'John 1:1', 'Genesis 1:1', 'Matthew 5:16', 'Hebrews 11:1', '2 Timothy 1:7', 'Psalm 27:1', 'Proverbs 18:10', 'John 8:32', 'Ephesians 2:8', 'Romans 6:23', 'Psalm 118:24', 'Matthew 6:33', 'Isaiah 40:31', 'Psalm 121:1', 'John 15:5', 'Psalm 34:8', 'Psalm 37:4', 'Psalm 91:1', 'Psalm 119:11', 'Psalm 139:14', 'Proverbs 16:3', 'Proverbs 22:6', 'Ecclesiastes 3:1', 'Isaiah 26:3', 'Isaiah 53:5', 'Lamentations 3:22', 'Micah 6:8', 'Matthew 5:9', 'Matthew 6:34', 'Matthew 7:7', 'Matthew 28:20', 'Mark 10:27', 'Luke 1:37', 'John 10:10', 'John 13:34', 'John 14:27', 'John 16:33', 'Acts 1:8', 'Romans 5:8', 'Romans 10:9', 'Romans 15:13', '1 Corinthians 13:4', '1 Corinthians 13:13', '1 Corinthians 16:14', '2 Corinthians 5:7', '2 Corinthians 5:17', '2 Corinthians 12:9', 'Galatians 2:20', 'Galatians 5:22', 'Ephesians 4:32', 'Ephesians 6:10', 'Philippians 4:6', 'Philippians 4:7', 'Philippians 1:6', 'Colossians 3:23', '1 Thessalonians 5:16', '1 Thessalonians 5:17', '1 Thessalonians 5:18', '2 Thessalonians 3:3', '1 Timothy 4:12', '2 Timothy 3:16', 'Hebrews 4:12', 'Hebrews 13:8', 'James 1:5', 'James 1:17', 'James 4:8', '1 Peter 5:7', '2 Peter 3:9', '1 John 1:9', '1 John 4:4', '1 John 4:8', 'Revelation 3:20', 'Revelation 21:4', 'Deuteronomy 31:6', 'Joshua 24:15', '1 Samuel 16:7', 'Psalm 16:11', 'Psalm 19:14', 'Psalm 28:7', 'Psalm 30:5', 'Psalm 32:8', 'Psalm 51:10', 'Psalm 56:3', 'Psalm 62:1', 'Psalm 73:26', 'Psalm 90:12', 'Psalm 100:4', 'Psalm 103:1', 'Psalm 107:1', 'Psalm 145:18', 'Proverbs 4:23', 'Proverbs 15:1', 'Proverbs 17:17']
+const notif = () => { try { const c = (window as any).Capacitor; return c?.isNativePlatform?.() ? c.Plugins?.LocalNotifications || null : null } catch { return null } }
+const verseFor = (b: Bible, day: number): Hit | null => { const order = shuf(VOTD, rng(Math.floor(day / VOTD.length) + 11)); for (let k = 0; k < order.length; k++) { const h = parseRef(b, order[(day + k) % order.length])[0]; if (h) return h } return null }
+const vnumOf = (h: Hit) => Number((h.ref.match(/:(\d+)/) || [])[1]) || 0
+const verseImage = (h: Hit): Promise<Blob | null> => new Promise(res => {
+  const c = document.createElement('canvas'); c.width = 1080; c.height = 1920; const x = c.getContext('2d')!
+  const g = x.createLinearGradient(0, 0, 0, 1920); g.addColorStop(0, '#2a1f05'); g.addColorStop(1, '#0b0b0f'); x.fillStyle = g; x.fillRect(0, 0, 1080, 1920)
+  x.strokeStyle = '#d4a017'; x.lineWidth = 6; x.strokeRect(60, 60, 960, 1800); x.textAlign = 'center'
+  x.fillStyle = '#d4a017'; x.font = '600 44px sans-serif'; x.fillText('✦  VERSE OF THE DAY  ✦', 540, 620)
+  x.fillStyle = '#fdf3d0'; x.font = 'italic 60px Georgia, serif'; const lines: string[] = []; let cur = ''
+  for (const w of h.text.split(/\s+/)) { const t = cur ? cur + ' ' + w : w; if (x.measureText(t).width > 820 && cur) { lines.push(cur); cur = w } else cur = t } lines.push(cur)
+  let y = 760; for (const l of lines) { x.fillText(l, 540, y); y += 84 }
+  x.fillStyle = '#d4a017'; x.font = '700 54px sans-serif'; x.fillText(h.ref, 540, y + 70)
+  x.globalAlpha = 0.6; x.fillStyle = '#fdf3d0'; x.font = '34px sans-serif'; x.fillText('Salem Daily', 540, 1790)
+  c.toBlob(b => res(b), 'image/png') })
+
+function VerseOfDay({ settings }: any) {
+  const bible = useBible(settings.translation); const h = bible ? verseFor(bible, dayNum(todayStr())) : null
+  if (!h) return <div className="sd-card verse-card"><p className="text-sm opacity-70">Loading today's verse…</p></div>
+  const open = () => { localStorage.setItem('sd:goto', JSON.stringify({ book: h.book, ch: h.ch, v: vnumOf(h) })); location.hash = '#/bible' }
+  const share = async () => { const text = `“${h.text}” — ${h.ref}`; try { if (typeof navigator.share === 'function') await navigator.share({ text }); else { await navigator.clipboard?.writeText(text); alert('Verse copied.') } } catch { /* cancelled */ } }
+  const picture = async () => { const b = await verseImage(h); if (!b) return; const f = new File([b], 'verse-of-the-day.png', { type: 'image/png' }); try { if (navigator.canShare?.({ files: [f] })) { await navigator.share({ files: [f] }); return } } catch { /* fall through */ } const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'verse-of-the-day.png'; a.click() }
+  return <div className="sd-card verse-card rise" role="button" onClick={open}>
+    <div className="text-xs tracking-widest uppercase sd-gold">✨ Verse of the day · {new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</div>
+    <p className="verse-text">“{h.text}”</p>
+    <div className="flex items-center justify-between"><b className="sd-gold">{h.ref}</b><span className="text-xs opacity-60">Tap to read the chapter ›</span></div>
+    <div className="flex gap-2 mt-3" onClick={e => e.stopPropagation()}><button className="sd-chip" onClick={share}>↗ Share</button><button className="sd-chip" onClick={picture}>🖼 Save as picture</button></div></div>
+}
+
+function Reminder({ settings, remind }: any) {
+  const bible = useBible(settings.translation)
+  useEffect(() => { const n = notif(); if (!n) return
+    ;(async () => { try { const pend = await n.getPending(); if (pend?.notifications?.length) await n.cancel({ notifications: pend.notifications }); if (!remind.on || !bible) return
+      const p = await n.requestPermissions(); if (p.display !== 'granted') return
+      const [hh, mm] = (remind.time || '07:00').split(':').map(Number); const list: any[] = []
+      for (let k = 0; k < 30; k++) { const at = new Date(); at.setDate(at.getDate() + k); at.setHours(hh, mm, 0, 0); if (at.getTime() < Date.now() + 30000) continue; const v = verseFor(bible, dayNum(todayStr(k))); if (v) list.push({ id: 2000 + k, title: '📖 Verse of the day', body: `${v.text} — ${v.ref}`, schedule: { at, allowWhileIdle: true } }) }
+      if (list.length) await n.schedule({ notifications: list }) } catch { /* ignore */ } })() }, [bible?.meta.id, remind.on, remind.time])
+  return null
+}
+
 function SelReader({ rate }: { rate: number }) {
   const [t, setT] = useState('')
   useEffect(() => { const f = () => setT((getSelection()?.toString() || '').trim()); document.addEventListener('selectionchange', f); return () => document.removeEventListener('selectionchange', f) }, [])
@@ -581,7 +625,7 @@ function Tour({ onDone }: { onDone: () => void }) {
 
 export default function App() {
   const route = useHash(); const [name, setName] = useLS('name', ''); const [saved, setSettings] = useLS<any>('settings', {}); const settings: any = { translation: 'sample', font: 18, mode: 'dark', accent: '#d4a017', serif: false, spacing: 1.6, vnums: true, motion: true, ...saved }
-  const [verse, setVerse] = useState<{ ref: string; text: string } | null>(null); const [stale, setStale] = useState(false); const [tour, setTour] = useLS<boolean>('tourDone', false)
+  const [verse, setVerse] = useState<{ ref: string; text: string } | null>(null); const [remind, setRemind] = useLS<{ on: boolean; time: string }>('verseRemind', { on: false, time: '07:00' }); const [stale, setStale] = useState(false); const [tour, setTour] = useLS<boolean>('tourDone', false)
   useEffect(() => { if (!localStorage.getItem('sd:firstUse')) localStorage.setItem('sd:firstUse', JSON.stringify(Date.now()))
     const chk = () => fetch(B + 'version.json', { cache: 'no-store' }).then(r => r.json()).then(j => { if (j?.v && j.v !== __BUILD__) { if (!sessionStorage.getItem('sd-upd')) { sessionStorage.setItem('sd-upd', '1'); repair() } else setStale(true) } }).catch(() => {})
     chk(); const f = () => { if (!document.hidden) chk() }; document.addEventListener('visibilitychange', f); const t = setInterval(chk, 300000); return () => { document.removeEventListener('visibilitychange', f); clearInterval(t) } }, [])
@@ -598,12 +642,12 @@ export default function App() {
   if (!name) return <Welcome onDone={setName} />
   const tab = route.split('/')[0]
   const restore = async (f: File) => { try { const j = JSON.parse(await f.text()); Object.entries(j).forEach(([k, v]) => localStorage.setItem(k, v as string)); location.reload() } catch { alert('Invalid backup') } }
-  return <div className="min-h-screen"><div className="max-w-2xl mx-auto p-4 space-y-4"><SelReader rate={ttsRate} />{!tour && <Tour onDone={() => setTour(true)} />}{stale && <div className="sd-card flex items-center justify-between gap-2"><span className="text-sm">✨ A new version is ready</span><button className="sd-btn" onClick={repair}>Update now</button></div>}
+  return <div className="min-h-screen"><div className="max-w-2xl mx-auto p-4 space-y-4"><SelReader rate={ttsRate} /><Reminder settings={settings} remind={remind} />{!tour && <Tour onDone={() => setTour(true)} />}{stale && <div className="sd-card flex items-center justify-between gap-2"><span className="text-sm">✨ A new version is ready</span><button className="sd-btn" onClick={repair}>Update now</button></div>}
     <header className="flex justify-between items-center"><h1 className="text-xl font-bold sd-gold flex items-center gap-2"><img src={B + 'icons/icon.png'} alt="" className="w-9 h-9 rounded-xl glow" />{theme.appName || 'Salem Daily'}</h1>
       <nav className="flex flex-wrap justify-end gap-x-3 text-sm">{[['', 'Home'], ['bible', 'Bible'], ['books', 'Books'], ['plans', 'Plans'], ['ask', 'Ask'], ['settings', 'Settings']].map(([r, l]) => <a key={r} href={'#/' + r} className={'tab' + (tab === r ? ' active' : '')}><svg viewBox="0 0 24 24" aria-hidden="true"><path d={ICONS[r]} /></svg><span>{l}</span></a>)}</nav></header>
     {tab === 'plans' && opts.length > 1 && <BiblePicker opts={opts} settings={settings} setSettings={setSettings} block />}
     <div key={tab} className="rise space-y-4">
-    {tab === '' && <div className="space-y-3">{heroSrc && <div className="overflow-hidden rounded-2xl"><img key={heroSrc} src={B + heroSrc} alt="" className="w-full max-h-64 object-cover kenburns rise" onError={e => (e.currentTarget.style.display = 'none')} /></div>}<h2 className="text-lg rise">Hello, {name}</h2>{theme.tagline && <p className="text-sm opacity-70">{theme.tagline}</p>}{verse && <blockquote className={card + ' rise'} style={{ animationDelay: '.3s' }}>{verse.text}<footer className="text-sm opacity-70">— {verse.ref}</footer></blockquote>}{Date.now() - (ls<number>('lastBackup', 0) || ls<number>('firstUse', Date.now())) > 30 * 864e5 && <a href="#/settings" className="sd-card block text-sm rise">💾 It has been a while. Back up your notes and progress in Settings.</a>}<div className="grid grid-cols-2 gap-3">{[['ask', '🔎', 'Ask & search'], ['bible', '📖', 'Read the Bible'], ['plans', '📅', 'My plans'], ['books', '📚', 'Books'], ['games', '🎮', 'Word game'], ['saved', '🔖', 'Saved verses']].map(([r, e, l]) => <a key={r} href={'#/' + r} className="sd-card text-center rise"><div className="text-2xl">{e}</div><div className="text-sm">{l}</div></a>)}</div></div>}
+    {tab === '' && <div className="space-y-3">{heroSrc && <div className="overflow-hidden rounded-2xl"><img key={heroSrc} src={B + heroSrc} alt="" className="w-full max-h-64 object-cover kenburns rise" onError={e => (e.currentTarget.style.display = 'none')} /></div>}<h2 className="text-lg rise">Hello, {name}</h2>{theme.tagline && <p className="text-sm opacity-70">{theme.tagline}</p>}<VerseOfDay settings={settings} />{Date.now() - (ls<number>('lastBackup', 0) || ls<number>('firstUse', Date.now())) > 30 * 864e5 && <a href="#/settings" className="sd-card block text-sm rise">💾 It has been a while. Back up your notes and progress in Settings.</a>}<div className="grid grid-cols-2 gap-3">{[['ask', '🔎', 'Ask & search'], ['bible', '📖', 'Read the Bible'], ['plans', '📅', 'My plans'], ['books', '📚', 'Books'], ['games', '🎮', 'Word game'], ['saved', '🔖', 'Saved verses']].map(([r, e, l]) => <a key={r} href={'#/' + r} className="sd-card text-center rise"><div className="text-2xl">{e}</div><div className="text-sm">{l}</div></a>)}</div></div>}
     {tab === 'bible' && <Bible settings={settings} setSettings={setSettings} opts={opts} />}
     {(tab === 'books' || tab === 'devotions') && <Books settings={settings} />}
     {tab === 'plans' && <Plans settings={settings} />}
@@ -611,7 +655,7 @@ export default function App() {
     {tab === 'games' && <Games settings={settings} opts={opts} />}
     {tab === 'ask' && <Ask settings={settings} theme={theme} opts={opts} />}
     {tab === 'admin' && <Admin />}
-    {tab === 'settings' && <SettingsPage name={name} setName={setName} settings={settings} setSettings={setSettings} opts={opts} restore={restore} theme={theme} />}
+    {tab === 'settings' && <SettingsPage name={name} setName={setName} settings={settings} setSettings={setSettings} opts={opts} restore={restore} theme={theme} remind={remind} setRemind={setRemind} />}
     </div>
   </div></div>
 }
