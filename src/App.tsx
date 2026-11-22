@@ -50,15 +50,17 @@ const rateNow = (d: number) => { try { return Number(JSON.parse(localStorage.get
 const listVoices = async (l2: string): Promise<string[]> => { try { const nt = nativeTTS(); if (nt) { const r = await nt.getSupportedVoices(); return (r.voices || []).filter((v: any) => (v.lang || '').toLowerCase().startsWith(l2)).map((v: any) => v.name || v.voiceURI) } if (canSpeak) return speechSynthesis.getVoices().filter(v => v.lang.toLowerCase().startsWith(l2)).map(v => v.name) } catch { /* none */ } return [] }
 const FEM = /female|woman|zira|samantha|susan|hazel|karen|moira|tessa|victoria|fiona|vani|kanmani|heera|aria|jenny/i
 const MALE = /(^|[^e])male|david|mark|daniel|alex|fred|george|ravi|valluvar|prabhat|guy|james/i
+const genderPref = (): string => { try { return JSON.parse(localStorage.getItem('sd:ttsGender') || '"any"') } catch { return 'any' } }
+const pickName = (names: string[], g: string) => g === 'f' ? names.find(n => FEM.test(n)) : g === 'm' ? names.find(n => MALE.test(n)) : undefined
 const speak = (texts: string[], language: string, rate: number, onIdx?: (i: number) => void, onDone?: () => void, onFail?: (m?: string) => void) => {
   if (!texts.length) return
   stopSpeak(); const my = ++tk; rate = rateNow(rate)
-  const lang = LANGCODE[language.toLowerCase()] || 'en-US'; const vn = voiceMap()[lang.slice(0, 2)]
+  const lang = LANGCODE[language.toLowerCase()] || 'en-US'; const gd = genderPref()
   const nt = nativeTTS()
-  if (nt) { nActive = true; (async () => { let vi: number | undefined; if (vn) { try { const r = await nt.getSupportedVoices(); const k = (r.voices || []).findIndex((v: any) => (v.name || v.voiceURI) === vn); if (k >= 0) vi = k } catch { /* default voice */ } }
+  if (nt) { nActive = true; (async () => { let vi: number | undefined; if (gd !== 'any') { try { const r = await nt.getSupportedVoices(); const vs = r.voices || []; const n = pickName(vs.filter((v: any) => (v.lang || '').toLowerCase().startsWith(lang.slice(0, 2))).map((v: any) => v.name || v.voiceURI), gd); if (n) vi = vs.findIndex((v: any) => (v.name || v.voiceURI) === n) } catch { /* default voice */ } }
     for (let i = 0; i < texts.length; i++) { if (my !== tk) return; onIdx?.(i); try { await nt.speak({ text: texts[i], lang, rate, pitch: 1, volume: 1, voice: vi, category: 'ambient' }) } catch (e: any) { if (my === tk) { nActive = false; onFail?.(String(e?.message || e)) } return } } nActive = false; if (my === tk) onDone?.() })(); return }
   if (!canSpeak) { onFail?.('no speech engine'); return }
-  const all = speechSynthesis.getVoices(); const voice = (vn ? all.find(v => v.name === vn) : undefined) || all.find(v => v.lang.replace('_', '-').toLowerCase().startsWith(lang.slice(0, 2)))
+  const cand = speechSynthesis.getVoices().filter(v => v.lang.replace('_', '-').toLowerCase().startsWith(lang.slice(0, 2))); const pn = pickName(cand.map(v => v.name), gd); const voice = cand.find(v => v.name === pn) || cand[0]
   texts.forEach((t, i) => { const u = new SpeechSynthesisUtterance(t); u.lang = lang; u.rate = rate; if (voice) u.voice = voice; u.onstart = () => { if (my === tk) onIdx?.(i) }; u.onerror = e => { if (my === tk && e.error !== 'interrupted' && e.error !== 'canceled') onFail?.(e.error) }; if (i === texts.length - 1) u.onend = () => { if (my === tk) onDone?.() }; speechSynthesis.speak(u) })
 }
 const BOOK_LIST = Object.values(NAMES)
@@ -89,6 +91,12 @@ const btn = 'sd-btn'
 
 function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   return createPortal(<><div className="sheet-back" onClick={onClose} /><div className="sheet"><div className="mx-auto mb-3 h-1 w-10 rounded-full bg-white/30" /><h3 className="sd-gold font-bold mb-3">{title}</h3>{children}</div></>, document.body)
+}
+
+function SpeedPicker({ rate, set }: { rate: number; set: (r: number) => void }) {
+  const [o, setO] = useState(false)
+  return <><button className="sd-chip !px-2 !py-1 text-xs" onClick={() => setO(true)}>⚡ {rate}× ▾</button>
+    {o && <Sheet title="Reading speed" onClose={() => setO(false)}>{[[0.75, 'Slow'], [1, 'Normal'], [1.25, 'Brisk'], [1.5, 'Fast'], [2, 'Very fast']].map(([r, l]) => <button key={r} className={'opt' + (rate === r ? ' on' : '')} onClick={() => { localStorage.setItem('sd:ttsRate', JSON.stringify(r)); set(r as number); setO(false) }}>{r}× · {l}</button>)}</Sheet>}</>
 }
 
 function BiblePicker({ opts, settings, setSettings, block, compact }: any) {
@@ -129,7 +137,7 @@ function Bible({ settings, setSettings, opts }: { settings: any; setSettings: an
     <input className={card + ' w-full'} placeholder="Search this translation…" value={q} onChange={e => setQ(e.target.value)} />
     {hits.map((h, k) => <p key={k} className="text-sm">{h.b} {h.i + 1}:{h.v + 1} — {h.t}</p>)}
     {!speechOK() && <p className="text-xs opacity-60">🔇 Voice reading is not available on this device.</p>}
-    {speechOK() && <div className="flex flex-wrap items-center gap-2"><button className="sd-btn" onClick={playing ? stop : play}>{playing ? '■ Stop' : '▶ Listen'}</button>{[0.75, 1, 1.25, 1.5, 2].map(r => <button key={r} className={'sd-chip' + (rate === r ? ' on' : '')} onClick={() => changeRate(r)}>{r}×</button>)}<label className="text-xs flex items-center gap-1"><input type="checkbox" checked={auto} onChange={e => setAuto(e.target.checked)} />Next chapter</label><span className="text-xs opacity-50">{nativeTTS() ? 'phone voice' : 'browser voice'}</span></div>}
+    {speechOK() && <div className="flex flex-wrap items-center gap-2"><button className="sd-btn" onClick={playing ? stop : play}>{playing ? '■ Stop' : '▶ Listen'}</button><SpeedPicker rate={rate} set={changeRate} /><label className="text-xs flex items-center gap-1"><input type="checkbox" checked={auto} onChange={e => setAuto(e.target.checked)} />Next chapter</label><span className="text-xs opacity-50">{nativeTTS() ? 'phone voice' : 'browser voice'}</span></div>}
     {speechOK() && bible.meta.language.toLowerCase() !== 'english' && <p className="text-xs opacity-60">Listening needs a {bible.meta.language} voice installed on your phone (Settings → Text-to-speech).</p>}
     <div style={readerStyle(settings)} className="space-y-2">{verses.map((t, v) => { const m = marks[key(v)] || {}; return <p key={v} ref={el => { if (el && cur === v) el.scrollIntoView({ block: 'center', behavior: 'smooth' }) }} onClick={() => setSel(v)} style={{ background: cur === v ? 'color-mix(in srgb, var(--gold) 28%, transparent)' : m.color ? m.color + '55' : undefined, cursor: 'pointer' }} className="rounded px-1 transition-colors">
       {settings.vnums && <sup className="mr-1">{v + 1}</sup>}{t}{m.bookmark && <span className="sd-gold"> ★</span>}{m.note && <span className="opacity-70"> ✎</span>}</p> })}
@@ -143,7 +151,7 @@ function Bible({ settings, setSettings, opts }: { settings: any; setSettings: an
 
 function Plans({ settings }: { settings: any }) {
   const [plans, setPlans] = useState<Plan[]>([]); const [sel, setSel] = useState(''); const [open, setOpen] = useState<number | null>(null); const [sw, setSw] = useState(false)
-  const [items, setItems] = useLS<string[]>('planItems', []); const [talk, setTalk] = useState(''); const [started, setStarted] = useLS<Record<string, string>>('planStarted', {}); const [tab, setTab] = useState(''); const [cat, setCat] = useState('All'); const [msg, setMsg] = useState(''); const [run, setRun] = useState<{ day: number; step: number } | null>(null); const [fin, setFin] = useState<number | null>(null); const [rate] = useLS<number>('ttsRate', 1)
+  const [items, setItems] = useLS<string[]>('planItems', []); const [talk, setTalk] = useState(''); const [started, setStarted] = useLS<Record<string, string>>('planStarted', {}); const [tab, setTab] = useState(''); const [cat, setCat] = useState('All'); const [msg, setMsg] = useState(''); const [run, setRun] = useState<{ day: number; step: number } | null>(null); const [fin, setFin] = useState<number | null>(null); const [rate, setRate] = useLS<number>('ttsRate', 1)
   useEffect(() => () => stopSpeak(), [])
   const [idx, setIdx] = useState<Entry[]>([]); const [bible, setBible] = useState<Bible | null>(null); const [custom] = useLS<Bible[]>('customBibles', [])
   useEffect(() => { get<Plan[]>('plans/plans.json').then(arr(setPlans)).catch(() => {}); get<Entry[]>('bibles/index.json').then(arr(setIdx)).catch(() => {}) }, [])
@@ -197,7 +205,7 @@ function Plans({ settings }: { settings: any }) {
     return <div key={run.day + '-' + idx} className="space-y-3 slide" onTouchStart={e => { touchX = e.touches[0].clientX; touchY = e.touches[0].clientY }} onTouchEnd={e => { const dx = e.changedTouches[0].clientX - touchX; const dy = e.changedTouches[0].clientY - touchY; if (Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy) * 1.5) { if (dx < 0) nextStep(); else prev() } }}>
       <div className="flex justify-between items-center text-sm"><button className="underline" onClick={() => { stopSpeak(); setTalk(''); setRun(null) }}>← {plan.title}</button><span>Day {run.day + 1} of {plan.days.length}</span></div>
       <div className="flex gap-1">{steps.map((_, k) => <span key={k} className="h-1.5 flex-1 rounded" style={{ background: k <= idx ? 'var(--gold)' : 'rgba(255,255,255,.15)' }} />)}</div>
-      {!st ? <p className="text-sm opacity-70">Nothing to read on this day.</p> : <div className="space-y-3"><div className="flex items-center justify-between gap-2"><h3 className="sd-gold font-bold text-lg">{st.kind === 'd' ? (r.title || 'Devotion') : st.label}</h3>{speechOK() && <button className="sd-chip" onClick={() => speakTexts(st.kind === 'd' ? [r.title || '', r.body || ''].filter(Boolean) : textsOf(reads(r)[st.k]), 'step')}>{talk === 'step' ? '■ Stop' : '🔊 Listen'}</button>}</div>
+      {!st ? <p className="text-sm opacity-70">Nothing to read on this day.</p> : <div className="space-y-3"><div className="flex items-center justify-between gap-2"><h3 className="sd-gold font-bold text-lg">{st.kind === 'd' ? (r.title || 'Devotion') : st.label}</h3>{speechOK() && <div className="flex gap-2"><SpeedPicker rate={rate} set={setRate} /><button className="sd-chip" onClick={() => speakTexts(st.kind === 'd' ? [r.title || '', r.body || ''].filter(Boolean) : textsOf(reads(r)[st.k]), 'step')}>{talk === 'step' ? '■ Stop' : '🔊 Listen'}</button></div>}</div>
         {st.kind === 'd' ? <p style={readerStyle(settings)} className="whitespace-pre-wrap">{r.body}</p> : <div style={readerStyle(settings)} className="space-y-1">{reading(reads(r)[st.k])}</div>}</div>}
       <div className="flex gap-2 pt-2"><button className="sd-chip" disabled={idx === 0} onClick={prev}>◀ Back</button><button className="sd-btn flex-1" onClick={nextStep}>{last ? 'Finish day ✓' : 'Next ▶'}</button></div>
       <p className="text-xs opacity-60 text-center">Tap Next, or swipe left. Swipe right to go back.</p></div>
@@ -248,7 +256,7 @@ type BookData = { chapters: { title: string; paras: string[] }[] }
 
 function Books({ settings }: any) {
   const [list, setList] = useState<BookMeta[]>([]); const [q, setQ] = useState(''); const [cat, setCat] = useState('All'); const [sel, setSel] = useState(''); const [data, setData] = useState<BookData | null>(null); const [ch, setCh] = useState<number | null>(null)
-  const [prog, setProg] = useLS<Record<string, number>>('bookProg', {}); const [talk, setTalk] = useState(false); const [rate] = useLS<number>('ttsRate', 1)
+  const [prog, setProg] = useLS<Record<string, number>>('bookProg', {}); const [talk, setTalk] = useState(false); const [rate, setRate] = useLS<number>('ttsRate', 1)
   useEffect(() => { get('books/books.json').then(arr(setList)).catch(() => {}) }, [])
   useEffect(() => { setData(null); setCh(null); if (sel) get<BookData>(`books/${sel}.json`).then(j => setData(j && Array.isArray(j.chapters) ? j : { chapters: [] })).catch(() => setData({ chapters: [] })) }, [sel])
   useEffect(() => () => stopSpeak(), [])
@@ -277,7 +285,7 @@ function Books({ settings }: any) {
   return <div key={ch} className="space-y-3 slide" onTouchStart={e => { touchX = e.touches[0].clientX; touchY = e.touches[0].clientY }} onTouchEnd={e => { const dx = e.changedTouches[0].clientX - touchX; const dy = e.changedTouches[0].clientY - touchY; if (Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy) * 1.5) go(dx < 0 ? ch + 1 : ch - 1) }}>
     <div className="flex justify-between items-center text-sm"><button className="underline" onClick={() => { stopSpeak(); setTalk(false); setCh(null) }}>← {book.title}</button><span>{ch + 1} / {chs.length}</span></div>
     <span className="block h-1 rounded bg-white/10"><span className="block h-1 rounded" style={{ width: `${(ch + 1) * 100 / chs.length}%`, background: 'var(--gold)' }} /></span>
-    <div className="flex items-center justify-between gap-2"><h3 className="sd-gold font-bold text-lg">{c.title}</h3>{speechOK() && <button className="sd-chip" onClick={() => { if (talk) { stopSpeak(); setTalk(false) } else { setTalk(true); speak([c.title, ...c.paras], lang, rate, undefined, () => setTalk(false), (m) => { setTalk(false); alert('Could not play the voice (' + (m || 'unknown') + ').') }) } }}>{talk ? '■ Stop' : '🔊 Listen'}</button>}</div>
+    <div className="flex items-center justify-between gap-2"><h3 className="sd-gold font-bold text-lg">{c.title}</h3>{speechOK() && <div className="flex gap-2"><SpeedPicker rate={rate} set={setRate} /><button className="sd-chip" onClick={() => { if (talk) { stopSpeak(); setTalk(false) } else { setTalk(true); speak([c.title, ...c.paras], lang, rate, undefined, () => setTalk(false), (m) => { setTalk(false); alert('Could not play the voice (' + (m || 'unknown') + ').') }) } }}>{talk ? '■ Stop' : '🔊 Listen'}</button></div>}</div>
     <div style={readerStyle(settings)} className="space-y-3">{c.paras.map((p, i) => <p key={i}>{p}</p>)}</div>
     <div className="flex gap-2 pt-2"><button className="sd-chip" disabled={ch === 0} onClick={() => go(ch - 1)}>◀ Previous</button><button className="sd-btn flex-1" onClick={() => go(ch + 1)}>{last ? 'Finish ✓' : 'Next chapter ▶'}</button></div>
     <p className="text-xs opacity-60 text-center">Swipe left for the next chapter, right to go back.</p></div>
@@ -352,11 +360,7 @@ function Admin() {
 const readerStyle = (st: any) => ({ fontSize: st.font, lineHeight: st.spacing, fontFamily: st.serif ? 'Georgia, "Times New Roman", serif' : undefined })
 
 function SettingsPage({ name, setName, settings, setSettings, opts, restore, theme }: any) {
-  const [rate, setRate] = useLS<number>('ttsRate', 1); const [vm, setVm] = useLS<Record<string, string>>('ttsVoices', {}); const [pk, setPk] = useState(''); const [vl, setVl] = useState<string[]>([])
-  const LN: Record<string, string> = { en: 'english', ta: 'tamil', si: 'sinhala' }; const SAMPLE: Record<string, string> = { en: 'Hello, this is how I will read to you.', ta: 'வணக்கம், இப்படித்தான் நான் வாசிப்பேன்.', si: 'ආයුබෝවන්.' }
-  const saveVoice = (l: string, n: string) => { const m = { ...vm, [l]: n }; localStorage.setItem('sd:ttsVoices', JSON.stringify(m)); setVm(m); speak([SAMPLE[l]], LN[l], rate) }
-  const pickGender = async (l: string, g: 'f' | 'm') => { const n = (await listVoices(l)).find(x => (g === 'f' ? FEM : MALE).test(x)); if (n) saveVoice(l, n); else alert('No ' + (g === 'f' ? 'female' : 'male') + ' voice was found for this language on your phone. Use Choose to see the voices you have.') }
-  const choose = async (l: string) => { setVl(await listVoices(l)); setPk(l) }
+  const [rate, setRate] = useLS<number>('ttsRate', 1); const [gender, setGender] = useLS<string>('ttsGender', 'any')
   const up = (p: object) => setSettings({ ...settings, ...p })
   const row = 'flex items-center justify-between gap-3 py-1'
   const chip = (on: boolean) => 'sd-chip' + (on ? ' on' : '')
@@ -366,11 +370,9 @@ function SettingsPage({ name, setName, settings, setSettings, opts, restore, the
       <div className="flex gap-2">{[['dark', '🌙 Dark'], ['light', '☀️ Light'], ['auto', '🌓 Auto']].map(([m, l]) => <button key={m} className={chip(settings.mode === m)} onClick={() => up({ mode: m })}>{l}</button>)}</div>
       <div className="flex gap-3 items-center"><span className="text-sm">Accent</span>{['#d4a017', '#38bdf8', '#fb7185', '#4ade80', '#a78bfa'].map(c => <button key={c} aria-label={c} className="w-7 h-7 rounded-full" style={{ background: c, boxShadow: settings.accent === c ? '0 0 0 3px var(--ink)' : 'none' }} onClick={() => up({ accent: c })} />)}</div>
       <label className={row}>Animations<input type="checkbox" checked={settings.motion} onChange={e => up({ motion: e.target.checked })} /></label></div>
-    <div className="sd-card space-y-3"><h3 className="sd-gold font-semibold">Voice and speed</h3>
-      <label className={row}>Speed {rate}×<input type="range" min={0.5} max={2} step={0.1} value={rate} onChange={e => { const r = +e.target.value; localStorage.setItem('sd:ttsRate', JSON.stringify(r)); setRate(r) }} /></label>
-      {[['en', 'English'], ['ta', 'Tamil'], ['si', 'Sinhala']].map(([l, n]) => <div key={l} className="flex flex-wrap items-center gap-2 text-sm"><span className="w-16">{n}</span><button className="sd-chip" onClick={() => pickGender(l, 'f')}>👩 Female</button><button className="sd-chip" onClick={() => pickGender(l, 'm')}>👨 Male</button><button className="sd-chip" onClick={() => choose(l)}>Choose</button><button className="sd-chip" onClick={() => speak([SAMPLE[l]], LN[l], rate)}>▶ Test</button><span className="w-full text-xs opacity-60">{vm[l] || 'Default voice'}</span></div>)}
-      <p className="text-xs opacity-60">The voices come from your phone. Install more in your phone Settings, under Language, then Text-to-speech.</p>
-      {pk && <Sheet title="Choose a voice" onClose={() => setPk('')}>{vl.length ? vl.map(v => <button key={v} className={'opt' + (vm[pk] === v ? ' on' : '')} onClick={() => saveVoice(pk, v)}>{v}</button>) : <p className="text-sm">No voices found for this language. Install one in your phone Text-to-speech settings.</p>}<button className="sd-chip mt-2" onClick={() => { saveVoice(pk, ''); setPk('') }}>Use the default voice</button></Sheet>}</div>
+    <div className="sd-card space-y-3"><h3 className="sd-gold font-semibold">Voice</h3>
+      <div className="flex gap-2">{[['any', 'Default'], ['f', 'Female'], ['m', 'Male']].map(([g, l]) => <button key={g} className={'sd-chip' + (gender === g ? ' on' : '')} onClick={() => { localStorage.setItem('sd:ttsGender', JSON.stringify(g)); setGender(g) }}>{l}</button>)}</div>
+      <label className={row}>Reading speed<SpeedPicker rate={rate} set={setRate} /></label></div>
     <div className="sd-card space-y-2"><h3 className="sd-gold font-semibold">Reading</h3>
       {opts.length > 0 && <div className={row}>Bible<BiblePicker opts={opts} settings={settings} setSettings={setSettings} /></div>}
       <label className={row}>Text size {settings.font}px<input type="range" min={14} max={32} value={settings.font} onChange={e => up({ font: +e.target.value })} /></label>
@@ -387,6 +389,7 @@ function SettingsPage({ name, setName, settings, setSettings, opts, restore, the
     <div className="text-center space-y-2"><button className="sd-chip" onClick={async () => { const rs = await navigator.serviceWorker?.getRegistrations(); await Promise.all((rs || []).map(r => r.unregister())); const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); location.reload() }}>↻ Get the latest version now</button><p className="text-xs opacity-60">Salem Daily · the app updates itself whenever new content is published.</p></div></div>
 }
 
+function Confetti() { return createPortal(<div className="confetti">{Array.from({ length: 30 }, (_, i) => <i key={i} style={{ left: `${(i * 37) % 100}%`, animationDelay: `${(i % 8) * 0.1}s`, background: ['#f5d36a', '#d4a017', '#fb7185', '#38bdf8', '#4ade80'][i % 5] }} />)}</div>, document.body) }
 type GTheme = { name: string; emoji: string; intro: string; books?: string[]; words: [string, string][]; quiz: [string, string, string[]][] }
 type GQ = { kind: 'scr' | 'quiz' | 'cloze'; q: string; a: string; opts?: string[]; show?: string }
 const rng = (a: number) => () => { a += 0x6D2B79F5; let t = a; t = Math.imul(t ^ t >>> 15, t | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296 }
@@ -414,10 +417,10 @@ function Play({ qs, title, onFinish, onExit }: { qs: GQ[]; title: string; onFini
   const next = (ok: boolean) => { const s = score + (ok ? 1 : 0); setScore(s); setG(''); setFb(''); if (i + 1 >= qs.length) { setDone(true); onFinish(s) } else setI(i + 1) }
   const answer = (ok: boolean) => { if (fb) return; setFb(ok ? '✓ Correct!' : 'The answer was: ' + q.a); setTimeout(() => next(ok), ok ? 800 : 1600) }
   const check = () => answer(g.trim().toUpperCase() === q.a.toUpperCase())
-  if (done) return <div className="sd-card text-center space-y-3"><h3 className="sd-gold font-bold text-2xl">{score} / {qs.length}</h3><p>{score === qs.length ? 'Perfect! 🎉' : score >= qs.length / 2 ? 'Well done! 👏' : 'Keep practicing! 💪'}</p><button className="sd-btn" onClick={onExit}>Back to games</button></div>
+  if (done) return <div className="sd-card text-center space-y-3 popin">{score >= qs.length / 2 && <Confetti />}<div className="text-5xl">{score === qs.length ? '🏆' : score >= qs.length / 2 ? '⭐' : '💪'}</div><h3 className="sd-gold font-bold text-2xl">{score} / {qs.length}</h3><p>{score === qs.length ? 'Perfect! 🎉' : score >= qs.length / 2 ? 'Well done! 👏' : 'Keep practicing! 💪'}</p><button className="sd-btn" onClick={onExit}>Back to games</button></div>
   return <div className="space-y-3"><div className="flex justify-between text-sm"><button className="underline" onClick={onExit}>← Back</button><span>{title} · {i + 1}/{qs.length}</span></div>
     <div className="h-1 rounded bg-white/10"><div className="h-1 rounded" style={{ width: `${i * 100 / qs.length}%`, background: 'var(--gold)' }} /></div>
-    <div className="sd-card space-y-3 text-center">{q.kind === 'quiz' ? <><p className="font-semibold whitespace-pre-wrap">{q.q}</p>{q.opts!.map(o => <button key={o} className={'opt' + (fb && o === q.a ? ' on' : '')} onClick={() => answer(o === q.a)}>{o}</button>)}</>
+    <div className={'sd-card space-y-3 text-center ' + (fb ? (fb.startsWith('✓') ? 'pulse-ok' : 'shake') : '')}>{q.kind === 'quiz' ? <><p className="font-semibold whitespace-pre-wrap">{q.q}</p>{q.opts!.map(o => <button key={o} className={'opt' + (fb && o === q.a ? ' on' : '')} onClick={() => answer(o === q.a)}>{o}</button>)}</>
       : <>{q.kind === 'scr' ? <><p className="text-sm opacity-70">Unscramble the word</p><div className="flex flex-wrap justify-center gap-2">{q.q.split('').map((c, k) => <span key={k} className="sd-chip on text-lg">{c}</span>)}</div></> : <><p className="text-sm opacity-70">Fill in the missing word</p><p className="font-semibold">“{q.q}”</p></>}
         {q.show && <p className="text-sm">Hint: {q.show}</p>}
         <input className="w-full rounded-lg px-3 py-2 text-center uppercase" value={g} onChange={e => setG(e.target.value)} onKeyDown={e => e.key === 'Enter' && check()} placeholder="Your answer" />
@@ -432,9 +435,9 @@ function WordBuilder({ bible, onDone, onExit }: { bible: Bible; onDone: (p: numb
   const [t, setT] = useState(() => mk(dayNum(todayStr()) + 1234, false)); const [found, setFound] = useState<string[]>([]); const [g, setG] = useState(''); const [msg, setMsg] = useState(''); const [fin, setFin] = useState(false)
   const pts = (w: string) => w.split('').reduce((a, c) => a + (LV[c] || 0), 0) + (w.length === 7 ? 20 : 0); const total = found.reduce((a, w) => a + pts(w), 0)
   const add = () => { const w = g.toLowerCase().trim(); setG(''); if (w.length < 3) return setMsg('Use at least 3 letters.'); if (found.includes(w)) return setMsg('You already found that.'); if (!t.all.includes(w)) return setMsg('Not a word from the Bible, or the letters do not fit.'); setFound([...found, w]); setMsg(`✓ ${w.toUpperCase()} +${pts(w)}`) }
-  if (fin) return <div className="sd-card text-center space-y-3"><h3 className="sd-gold font-bold text-2xl">{total} points</h3><p>You found {found.length} of {t.all.length} words.</p><button className="sd-btn" onClick={onExit}>Back to games</button></div>
+  if (fin) return <div className="sd-card text-center space-y-3 popin">{total > 0 && <Confetti />}<div className="text-5xl">🔤</div><h3 className="sd-gold font-bold text-2xl">{total} points</h3><p>You found {found.length} of {t.all.length} words.</p><button className="sd-btn" onClick={onExit}>Back to games</button></div>
   return <div className="space-y-3 text-center"><div className="flex justify-between text-sm"><button className="underline" onClick={onExit}>← Back</button><span>Word Builder · {found.length}/{t.all.length} words</span></div>
-    <div className="sd-card space-y-3"><p className="text-sm opacity-70">Make words from these letters. Every word must appear in the Bible.</p><div className="flex justify-center gap-2">{t.letters.map((c, k) => <span key={k} className="sd-chip on text-xl relative">{c.toUpperCase()}<sub className="text-[9px]">{LV[c]}</sub></span>)}</div>
+    <div className="sd-card space-y-3"><p className="text-sm opacity-70">Make words from these letters. Every word must appear in the Bible.</p><div className="flex justify-center gap-2">{t.letters.map((c, k) => <span key={t.letters.join('') + k} style={{ animationDelay: k * 0.05 + 's' }} className="sd-chip on text-xl relative popin">{c.toUpperCase()}<sub className="text-[9px]">{LV[c]}</sub></span>)}</div>
       <input className="w-full rounded-lg px-3 py-2 text-center uppercase" value={g} onChange={e => setG(e.target.value)} onKeyDown={e => e.key === 'Enter' && add()} placeholder="Type a word" />
       <div className="flex gap-2 justify-center flex-wrap"><button className="sd-btn" onClick={add}>Add</button><button className="sd-chip" onClick={() => setT({ ...t, letters: shuf(t.letters, Math.random) })}>Shuffle</button><button className="sd-chip" onClick={() => { setT(mk(Math.floor(Math.random() * 1e6), true)); setFound([]); setMsg('') }}>New letters</button><button className="sd-chip" onClick={() => { onDone(Math.min(60, Math.floor(total / 3))); setFin(true) }}>Finish</button></div>
       <p className="h-5 text-sm">{msg}</p><p className="sd-gold font-bold">{total} points</p><div className="flex flex-wrap justify-center gap-1 text-sm">{found.map(w => <span key={w} className="sd-chip">{w}</span>)}</div></div></div>
@@ -451,8 +454,8 @@ function VerseBuilder({ bible, onDone, onExit }: { bible: Bible; onDone: (p: num
   const again = () => { setSt(init(Math.random)); setBuilt([]); setMist(0); setDone(false) }
   return <div className="space-y-3 text-center"><div className="flex justify-between text-sm"><button className="underline" onClick={onExit}>← Back</button><span>Verse Builder · {mist} mistakes</span></div>
     <div className="sd-card space-y-3"><p className="text-sm opacity-70">Tap the words in the right order to build the verse.</p><p className="min-h-[3rem] font-semibold">{built.map(i => toks[i]).join(' ') || '…'}</p>
-      <div className="flex flex-wrap justify-center gap-2">{st.order.filter(i => !built.includes(i)).map(i => <button key={i} className="sd-chip" onClick={() => tap(i)}>{toks[i]}</button>)}</div>
-      {done && <><p className="sd-gold font-bold">✓ {h.ref}</p><button className="sd-btn" onClick={again}>Another verse</button></>}</div></div>
+      <div className="flex flex-wrap justify-center gap-2">{st.order.filter(i => !built.includes(i)).map(i => <button key={i} className="sd-chip popin" onClick={() => tap(i)}>{toks[i]}</button>)}</div>
+      {done && <><Confetti /><p className="sd-gold font-bold popin">✓ {h.ref}</p><button className="sd-btn" onClick={again}>Another verse</button></>}</div></div>
 }
 
 function WordSearch({ theme, onDone, onExit }: { theme: GTheme; onDone: (p: number) => void; onExit: () => void }) {
@@ -461,14 +464,17 @@ function WordSearch({ theme, onDone, onExit }: { theme: GTheme; onDone: (p: numb
     for (const w of ws) for (let t = 0; t < 80; t++) { const [dr, dc] = dirs[Math.floor(r() * dirs.length)]; const r0 = Math.floor(r() * N), c0 = Math.floor(r() * N); const r1 = r0 + dr * (w.length - 1), c1 = c0 + dc * (w.length - 1); if (r1 < 0 || r1 >= N || c1 < 0 || c1 >= N) continue; let ok = true; for (let k = 0; k < w.length; k++) { const ch = grid[r0 + dr * k][c0 + dc * k]; if (ch && ch !== w[k]) { ok = false; break } } if (!ok) continue; for (let k = 0; k < w.length; k++) grid[r0 + dr * k][c0 + dc * k] = w[k]; placed.push(w); break }
     const A = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'; for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) if (!grid[i][j]) grid[i][j] = A[Math.floor(r() * 26)]
     return { grid, placed } })
-  const [a, setA] = useState<number[] | null>(null); const [found, setFound] = useState<string[]>([]); const [cells, setCells] = useState<string[]>([]); const [paid, setPaid] = useState(false)
-  const tap = (i: number, j: number) => { if (!a) return setA([i, j]); const lr = Math.abs(i - a[0]), lc = Math.abs(j - a[1]); setA(null); if (!(lr === 0 || lc === 0 || lr === lc)) return; const n = Math.max(lr, lc) + 1; const dr = Math.sign(i - a[0]), dc = Math.sign(j - a[1]); const co: string[] = []; let str = ''; for (let k = 0; k < n; k++) { const x = a[0] + dr * k, y = a[1] + dc * k; co.push(x + ',' + y); str += g.grid[x][y] }
-    const w = g.placed.find(p => p === str || p === str.split('').reverse().join('')); if (!w || found.includes(w)) return; const nf = [...found, w]; setFound(nf); setCells([...cells, ...co]); if (nf.length === g.placed.length && !paid) { setPaid(true); onDone(nf.length * 10) } }
+  const [st, setSt] = useState<number[] | null>(null); const [path, setPath] = useState<string[]>([]); const [found, setFound] = useState<string[]>([]); const [cells, setCells] = useState<string[]>([]); const [paid, setPaid] = useState(false)
+  const cellAt = (e: React.PointerEvent) => { const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null; const rc = el?.closest?.('[data-rc]')?.getAttribute('data-rc'); return rc ? rc.split(',').map(Number) : null }
+  const line = (a: number[], b: number[]) => { const lr = b[0] - a[0], lc = b[1] - a[1]; const ar = Math.abs(lr), ac = Math.abs(lc); let dr = Math.sign(lr), dc = Math.sign(lc); if (ac > ar * 2) dr = 0; else if (ar > ac * 2) dc = 0; const n = dr === 0 ? ac : dc === 0 ? ar : Math.min(ar, ac); const out: string[] = []; for (let k = 0; k <= n; k++) { const x = a[0] + dr * k, y = a[1] + dc * k; if (x < 0 || y < 0 || x >= N || y >= N) break; out.push(x + ',' + y) } return out }
+  const down = (e: React.PointerEvent<HTMLDivElement>) => { const c = cellAt(e); if (!c) return; e.currentTarget.setPointerCapture(e.pointerId); setSt(c); setPath([c.join(',')]) }
+  const move = (e: React.PointerEvent) => { if (!st) return; const c = cellAt(e); if (c) setPath(line(st, c)) }
+  const up = () => { if (!st) return; const str = path.map(p => { const [x, y] = p.split(',').map(Number); return g.grid[x][y] }).join(''); setSt(null); const w = path.length > 1 ? g.placed.find(p => p === str || p === str.split('').reverse().join('')) : undefined; const used = path; setPath([]); if (!w || found.includes(w)) return; const nf = [...found, w]; setFound(nf); setCells([...cells, ...used]); if (nf.length === g.placed.length && !paid) { setPaid(true); onDone(nf.length * 10) } }
   return <div className="space-y-3 text-center"><div className="flex justify-between text-sm"><button className="underline" onClick={onExit}>← Back</button><span>Word Search · {found.length}/{g.placed.length}</span></div>
-    <p className="text-sm opacity-70">Tap the first letter, then the last letter of a word. Theme: {theme.emoji} {theme.name}</p>
-    <div className="grid grid-cols-10 gap-1">{g.grid.map((row, i) => row.map((c, j) => <button key={i + '-' + j} className="aspect-square rounded text-sm font-semibold" style={{ background: cells.includes(i + ',' + j) ? 'var(--gold)' : a && a[0] === i && a[1] === j ? 'rgba(212,160,23,.5)' : 'rgba(255,255,255,.07)', color: cells.includes(i + ',' + j) ? '#1a1200' : undefined }} onClick={() => tap(i, j)}>{c}</button>))}</div>
-    <div className="flex flex-wrap justify-center gap-2 text-sm">{g.placed.map(w => <span key={w} className={'sd-chip' + (found.includes(w) ? ' on' : '')}>{w}</span>)}</div>
-    {found.length === g.placed.length && <p className="sd-gold font-bold">🎉 All words found!</p>}</div>
+    <p className="text-sm opacity-70">Swipe across the letters to find a word. Theme: {theme.emoji} {theme.name}</p>
+    <div className="grid grid-cols-10 gap-1 sd-card !p-2" style={{ touchAction: 'none', userSelect: 'none' }} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>{g.grid.map((row, i) => row.map((c, j) => { const k = i + ',' + j; const f = cells.includes(k); const on = path.includes(k); return <div key={k} data-rc={k} className={'ws-cell aspect-square rounded grid place-items-center text-sm font-bold' + (f ? ' ws-found' : '')} style={{ background: f ? 'var(--gold)' : on ? 'rgba(212,160,23,.55)' : 'rgba(255,255,255,.07)', color: f ? '#1a1200' : undefined, transform: on ? 'scale(1.12)' : undefined }}>{c}</div> }))}</div>
+    <div className="flex flex-wrap justify-center gap-2 text-sm">{g.placed.map(w => <span key={w} className={'sd-chip' + (found.includes(w) ? ' on line-through' : '')}>{w}</span>)}</div>
+    {found.length === g.placed.length && <><Confetti /><p className="sd-gold font-bold popin">🎉 All words found!</p></>}</div>
 }
 
 function Games({ settings, opts }: any) {
@@ -491,13 +497,13 @@ function Games({ settings, opts }: any) {
   if (mode?.qs) return <Play key={mode.title} qs={mode.qs} title={mode.title} onFinish={sc => mode.L ? finishLevel(mode.L, sc) : finishDaily(sc)} onExit={exit} />
   const names = ['Beginner', 'Reader', 'Scholar', 'Teacher', 'Master']; const infos = ['Short words, with hints', 'Longer words, with hints', 'Hard words and fill-in verses', 'Fill in the missing verse word', 'No hints: verses and books']
   const total = theme ? 9 : 0
-  return <div className="space-y-4"><h2 className="font-bold sd-gold">Games</h2><div className="flex gap-4 text-sm"><span>🔥 Streak {gp.streak}</span><span>⭐ {gp.score} points</span><span>🏅 Level {gp.level}</span></div>
-    {theme ? <div className={card + ' space-y-2'}><p className="text-xs uppercase opacity-60">Today's challenge · {day}</p><h3 className="text-lg font-bold">{theme.emoji} {theme.name}</h3><p className="text-sm opacity-80">{theme.intro}</p>
+  return <div className="space-y-4"><h2 className="font-bold sd-gold">Games</h2><div className="grid grid-cols-3 gap-2 text-center">{[['🔥', gp.streak, 'Streak'], ['⭐', gp.score, 'Points'], ['🏅', gp.level, 'Level']].map(([e, v, l]) => <div key={l as string} className="sd-card !p-2 popin"><div className="text-xl">{e}</div><div className="font-bold sd-gold text-lg">{v}</div><div className="text-[10px] uppercase opacity-60">{l}</div></div>)}</div>
+    {theme ? <div className={card + ' game-hero space-y-2 rise'}><p className="text-xs uppercase opacity-60">Today's challenge · {day}</p><h3 className="text-lg font-bold">{theme.emoji} {theme.name}</h3><p className="text-sm opacity-80">{theme.intro}</p>
       <button className="sd-btn" disabled={!bible} onClick={() => bible && setMode({ qs: buildDaily(theme, bible, day), title: theme.name })}>{!bible ? 'Loading the Bible…' : best !== undefined ? `Play again (best ${best}/${total})` : "Start today's challenge"}</button></div> : <p className="text-sm">Loading today's challenge…</p>}
     <h3 className="font-semibold">More games</h3>
-    {[['wb', '🔤', 'Word Builder', 'Make words from 7 letters, Scrabble style'], ['vb', '🧩', 'Verse Builder', 'Tap the words in the right order'], ['ws', '🔎', 'Word Search', "Find today's hidden Bible words"]].map(([k, e, n, d]) => <button key={k} disabled={!bible || !theme} className={card + ' flex w-full text-left gap-3 items-center'} onClick={() => setMode({ k })}><span className="text-3xl">{e}</span><span><b className="sd-gold">{n}</b><span className="block text-xs opacity-70">{d}</span></span></button>)}
+    {[['wb', '🔤', 'Word Builder', 'Make words from 7 letters, Scrabble style'], ['vb', '🧩', 'Verse Builder', 'Tap the words in the right order'], ['ws', '🔎', 'Word Search', "Find today's hidden Bible words"]].map(([k, e, n, d], ix) => <button key={k} style={{ animationDelay: ix * 0.08 + 's' }} disabled={!bible || !theme} className={card + ' game-tile rise flex w-full text-left gap-3 items-center'} onClick={() => setMode({ k })}><span className="tile-ico">{e}</span><span><b className="sd-gold">{n}</b><span className="block text-xs opacity-70">{d}</span></span></button>)}
     <h3 className="font-semibold">Levels</h3>
-    {names.map((n, k) => { const L = k + 1; const open = L <= gp.level; return <button key={L} disabled={!open || !themes.length || (L > 2 && !bible)} className={card + ' block w-full text-left' + (open ? '' : ' opacity-50')} onClick={() => setMode({ L, qs: levelQs(L), title: 'Level ' + L })}><b className="sd-gold">{open ? '' : '🔒 '}Level {L} · {n}</b><span className="block text-xs opacity-70">{infos[k]} · get 4 of 5 right to unlock the next</span></button> })}
+    {names.map((n, k) => { const L = k + 1; const open = L <= gp.level; return <button key={L} disabled={!open || !themes.length || (L > 2 && !bible)} className={card + ' game-tile block w-full text-left' + (open ? '' : ' opacity-50')} onClick={() => setMode({ L, qs: levelQs(L), title: 'Level ' + L })}><b className="sd-gold">{open ? '' : '🔒 '}Level {L} · {n}</b><span className="block text-xs opacity-70">{infos[k]} · get 4 of 5 right to unlock the next</span></button> })}
     <p className="text-xs opacity-60 text-center">New questions come from the Bible every day.</p></div>
 }
 
