@@ -64,6 +64,14 @@ const speak = (texts: string[], language: string, rate: number, onIdx?: (i: numb
   texts.forEach((t, i) => { const u = new SpeechSynthesisUtterance(t); u.lang = lang; u.rate = rate; if (voice) u.voice = voice; u.onstart = () => { if (my === tk) onIdx?.(i) }; u.onerror = e => { if (my === tk && e.error !== 'interrupted' && e.error !== 'canceled') onFail?.(e.error) }; if (i === texts.length - 1) u.onend = () => { if (my === tk) onDone?.() }; speechSynthesis.speak(u) })
 }
 const BOOK_LIST = Object.values(NAMES)
+let BN: Record<string, string[]> | null = null; let bnP: Promise<void> | null = null
+const bnLoad = () => bnP || (bnP = get<Record<string, string[]>>('booknames.json').then(j => { BN = j && typeof j === 'object' ? j : {} }).catch(() => { BN = {} }))
+const useBN = () => { const [, f] = useState(0); useEffect(() => { bnLoad().then(() => f(x => x + 1)) }, []) }
+const langKey = (language?: string) => { const l = (language || '').toLowerCase(); return l.startsWith('tamil') ? 'ta' : l.startsWith('sinhala') ? 'si' : '' }
+const bn = (name: string, language?: string) => { const k = langKey(language); const i = BOOK_LIST.indexOf(name); return (k && BN?.[k]?.[i]) || name }
+const refL = (h: { book: string; ref: string }, language?: string) => bn(h.book, language) + h.ref.slice(h.book.length)
+const L10N: Record<string, Record<string, string>> = { ta: { ch: 'அதிகாரம்', ot: 'பழைய ஏற்பாடு', nt: 'புதிய ஏற்பாடு', pick: 'புத்தகத்தை தேர்வு' }, si: { ch: 'පරිච්ඡේදය', ot: 'පැරණි ගිවිසුම', nt: 'නව ගිවිසුම', pick: 'පොත තෝරන්න' } }
+const t10 = (language: string | undefined, k: string, en: string) => L10N[langKey(language)]?.[k] || en
 const parseUsfx = (xml: string): { books: Bible['books'] } | string => {
   const doc = new DOMParser().parseFromString(xml, 'text/xml'); if (doc.querySelector('parsererror')) return 'This is not valid XML'
   const out: Bible['books'] = []
@@ -114,6 +122,7 @@ function Bible({ settings, setSettings, opts }: { settings: any; setSettings: an
   const [custom] = useLS<Bible[]>('customBibles', [])
   useEffect(() => { get<Entry[]>('bibles/index.json').then(arr(setIdx)).catch(() => {}) }, [])
   useEffect(() => { const c = custom.find(b => b.meta.id === tid); if (c) return setBible(c); const e = idx.find(x => x.id === tid) || idx[0]; if (e) loadBible(e.path).then(setBible).catch(() => setBible(null)) }, [tid, idx, custom])
+  useBN()
   const [playing, setPlaying] = useState(false); const [cur, setCur] = useState(-1); const [resume, setResume] = useState(false)
   const [rate, setRate] = useLS<number>('ttsRate', 1); const [auto, setAuto] = useLS<boolean>('ttsAuto', false)
   const stop = () => { stopSpeak(); setPlaying(false); setCur(-1) }
@@ -123,16 +132,16 @@ function Bible({ settings, setSettings, opts }: { settings: any; setSettings: an
   useEffect(() => () => stopSpeak(), [])
   useEffect(() => { if (!bible) return; const g = ls<any>('goto', null); if (g) { const k = bible.books.findIndex(b => b.name === g.book); if (k >= 0) { setBi(k); setCi(g.ch - 1); if (g.v) { setCur(g.v - 1); setTimeout(() => setCur(-1), 4500) } } localStorage.removeItem('sd:goto') } }, [bible])
   if (!bible) return <p>Loading Bible… (no translation available yet — import one in Admin)</p>
-  const book = bible.books[bi] ?? bible.books[0]; const verses = book.chapters[ci] ?? []; const play = () => startReading(verses); const playFrom = (n: number) => startReading(verses.slice(n), n); const changeRate = (r: number) => { setRate(r); localStorage.setItem('sd:ttsRate', JSON.stringify(r)); if (playing) { const from = Math.max(cur, 0); startReading(verses.slice(from), from) } }
+  const book = bible.books[bi] ?? bible.books[0]; const verses = book.chapters[ci] ?? []; const lang = bible.meta.language; const play = () => startReading(verses); const playFrom = (n: number) => startReading(verses.slice(n), n); const changeRate = (r: number) => { setRate(r); localStorage.setItem('sd:ttsRate', JSON.stringify(r)); if (playing) { const from = Math.max(cur, 0); startReading(verses.slice(from), from) } }
   const hits = q.length > 2 ? bible.books.flatMap(b => b.chapters.flatMap((c, i) => c.map((t, v) => ({ b: b.name, i, v, t })))).filter(x => x.t.toLowerCase().includes(q.toLowerCase())).slice(0, 30) : []
   const key = (v: number) => `${bible.meta.id}|${book.name}|${ci}|${v}`
   const set = (v: number, p: object) => setMarks({ ...marks, [key(v)]: { ...marks[key(v)], ...p } })
   return <div className="space-y-3">
     <div className="flex flex-wrap gap-2">
 
-      <button className="sd-chip" onClick={() => setPick('book')}>{book.name} ▾</button><button className="sd-chip" onClick={() => setPick('ch')}>Chapter {ci + 1} ▾</button><span className="ml-auto"><BiblePicker compact opts={opts} settings={settings} setSettings={setSettings} /></span>
-      {pick === 'book' && <Sheet title="Choose a book" onClose={() => setPick('')}>{(bible.books.length === 66 ? [['Old Testament', 0, 39], ['New Testament', 39, 66]] : [['Books', 0, bible.books.length]]).map(([t, a, z]: any) => <div key={t}><h4 className="text-xs uppercase opacity-60 mb-2">{t}</h4><div className="grid grid-cols-2 gap-2 mb-4">{bible.books.slice(a, z).map((b, k) => <button key={a + k} className={'opt !mb-0' + (a + k === bi ? ' on' : '')} onClick={() => { stop(); setBi(a + k); setCi(0); setPick('') }}>{b.name}</button>)}</div></div>)}</Sheet>}
-      {pick === 'ch' && <Sheet title={book.name} onClose={() => setPick('')}><div className="grid grid-cols-5 gap-2">{book.chapters.map((_, i) => <button key={i} className={'opt !mb-0 text-center' + (i === ci ? ' on' : '')} onClick={() => { stop(); setCi(i); setPick('') }}>{i + 1}</button>)}</div></Sheet>}
+      <button className="sd-chip" onClick={() => setPick('book')}>{bn(book.name, lang)} ▾</button><button className="sd-chip" onClick={() => setPick('ch')}>{t10(lang, 'ch', 'Chapter')} {ci + 1} ▾</button><span className="ml-auto"><BiblePicker compact opts={opts} settings={settings} setSettings={setSettings} /></span>
+      {pick === 'book' && <Sheet title={t10(lang, 'pick', 'Choose a book')} onClose={() => setPick('')}>{(bible.books.length === 66 ? [[t10(lang, 'ot', 'Old Testament'), 0, 39], [t10(lang, 'nt', 'New Testament'), 39, 66]] : [['Books', 0, bible.books.length]]).map(([t, a, z]: any) => <div key={t}><h4 className="text-xs uppercase opacity-60 mb-2">{t}</h4><div className="grid grid-cols-2 gap-2 mb-4">{bible.books.slice(a, z).map((b, k) => <button key={a + k} className={'opt !mb-0' + (a + k === bi ? ' on' : '')} onClick={() => { stop(); setBi(a + k); setCi(0); setPick('') }}>{bn(b.name, lang)}</button>)}</div></div>)}</Sheet>}
+      {pick === 'ch' && <Sheet title={bn(book.name, lang)} onClose={() => setPick('')}><div className="grid grid-cols-5 gap-2">{book.chapters.map((_, i) => <button key={i} className={'opt !mb-0 text-center' + (i === ci ? ' on' : '')} onClick={() => { stop(); setCi(i); setPick('') }}>{i + 1}</button>)}</div></Sheet>}
     </div>
     <input className={card + ' w-full'} placeholder="Search this translation…" value={q} onChange={e => setQ(e.target.value)} />
     {hits.map((h, k) => <p key={k} className="text-sm">{h.b} {h.i + 1}:{h.v + 1} — {h.t}</p>)}
@@ -142,7 +151,7 @@ function Bible({ settings, setSettings, opts }: { settings: any; setSettings: an
     <div style={readerStyle(settings)} className="space-y-2">{verses.map((t, v) => { const m = marks[key(v)] || {}; return <p key={v} ref={el => { if (el && cur === v) el.scrollIntoView({ block: 'center', behavior: 'smooth' }) }} onClick={() => setSel(v)} style={{ background: cur === v ? 'color-mix(in srgb, var(--gold) 28%, transparent)' : m.color ? m.color + '55' : undefined, cursor: 'pointer' }} className="rounded px-1 transition-colors">
       {settings.vnums && <sup className="mr-1">{v + 1}</sup>}{t}{m.bookmark && <span className="sd-gold"> ★</span>}{m.note && <span className="opacity-70"> ✎</span>}</p> })}
       <p className="text-xs opacity-60 pt-2">{bible.meta.name}{bible.meta.license ? ' · ' + bible.meta.license : ''}</p>
-      {sel !== null && verses[sel] !== undefined && (() => { const m = marks[key(sel)] || {}; const ref = `${book.name} ${ci + 1}:${sel + 1}`; return <Sheet title={ref} onClose={() => setSel(null)}>
+      {sel !== null && verses[sel] !== undefined && (() => { const m = marks[key(sel)] || {}; const ref = `${bn(book.name, lang)} ${ci + 1}:${sel + 1}`; return <Sheet title={ref} onClose={() => setSel(null)}>
         <p className="mb-3 text-sm opacity-80">{verses[sel]}</p>
         <div className="flex gap-3 items-center mb-3 flex-wrap">{['#fde047', '#86efac', '#7dd3fc', '#f9a8d4', '#fdba74'].map(c => <button key={c} aria-label="highlight" className="w-9 h-9 rounded-full grid place-items-center text-black text-sm" style={{ background: c }} onClick={() => set(sel, { color: m.color === c ? undefined : c })}>{m.color === c ? '✓' : ''}</button>)}{m.color && <button className="sd-chip" onClick={() => set(sel, { color: undefined })}>Remove</button>}</div>
         <div className="flex gap-2 flex-wrap mb-3"><button className="sd-chip" onClick={() => set(sel, { bookmark: !m.bookmark })}>{m.bookmark ? '★ Bookmarked' : '☆ Bookmark'}</button>{speechOK() && <button className="sd-chip" onClick={() => { const n = sel; setSel(null); stop(); playFrom(n) }}>▶ Read from here</button>}{speechOK() && <button className="sd-chip" onClick={() => { setSel(null); stop(); speak([verses[sel]], bible.meta.language, rate) }}>🔊 This verse</button>}<button className="sd-chip" onClick={() => navigator.clipboard?.writeText(`${ref} — ${verses[sel]}`)}>📋 Copy</button>{typeof navigator.share === 'function' && <button className="sd-chip" onClick={() => navigator.share({ text: `${ref} — ${verses[sel]}` }).catch(() => {})}>↗ Share</button>}</div>
@@ -151,16 +160,16 @@ function Bible({ settings, setSettings, opts }: { settings: any; setSettings: an
 
 function Plans({ settings }: { settings: any }) {
   const [plans, setPlans] = useState<Plan[]>([]); const [sel, setSel] = useState(''); const [open, setOpen] = useState<number | null>(null); const [sw, setSw] = useState(false)
-  const [items, setItems] = useLS<string[]>('planItems', []); const [talk, setTalk] = useState(''); const [started, setStarted] = useLS<Record<string, string>>('planStarted', {}); const [tab, setTab] = useState(''); const [cat, setCat] = useState('All'); const [msg, setMsg] = useState(''); const [run, setRun] = useState<{ day: number; step: number } | null>(null); const [fin, setFin] = useState<number | null>(null); const [rate, setRate] = useLS<number>('ttsRate', 1)
+  const [items, setItems] = useLS<string[]>('planItems', []); const [talk, setTalk] = useState(''); useBN(); const [started, setStarted] = useLS<Record<string, string>>('planStarted', {}); const [tab, setTab] = useState(''); const [cat, setCat] = useState('All'); const [msg, setMsg] = useState(''); const [run, setRun] = useState<{ day: number; step: number } | null>(null); const [fin, setFin] = useState<number | null>(null); const [rate, setRate] = useLS<number>('ttsRate', 1)
   useEffect(() => () => stopSpeak(), [])
   const [idx, setIdx] = useState<Entry[]>([]); const [bible, setBible] = useState<Bible | null>(null); const [custom] = useLS<Bible[]>('customBibles', [])
   useEffect(() => { get<Plan[]>('plans/plans.json').then(arr(setPlans)).catch(() => {}); get<Entry[]>('bibles/index.json').then(arr(setIdx)).catch(() => {}) }, [])
   useEffect(() => { const c = custom.find(b => b.meta.id === settings.translation); if (c) { setBible(c); return } const e = idx.find(x => x.id === settings.translation) || idx[0]; if (e) loadBible(e.path).then(setBible).catch(() => setBible(null)) }, [idx, custom, settings.translation])
-  const refOf = (r: PRead) => `${r.book} ${r.from}${r.vFrom ? ':' + r.vFrom + (r.vTo && r.vTo > r.vFrom ? '–' + r.vTo : '') : r.to > r.from ? '–' + r.to : ''}`
+  const refOf = (r: PRead) => `${bn(r.book, bible?.meta.language)} ${r.from}${r.vFrom ? ':' + r.vFrom + (r.vTo && r.vTo > r.vFrom ? '–' + r.vTo : '') : r.to > r.from ? '–' + r.to : ''}`
   const reads = (r: PDay): PRead[] => [r as PRead, ...(r.more || [])].filter(x => x.book)
   const reading = (r: PRead) => { const bk = bible?.books.find(b => b.name.toLowerCase() === r.book.toLowerCase()); if (!bk) return <p className="text-sm">"{r.book}" is not in the selected Bible.</p>
     if (r.vFrom) return <div>{(bk.chapters[r.from - 1] || []).slice(r.vFrom - 1, r.vTo || r.vFrom).map((t, v) => <p key={v}><sup>{r.vFrom! + v}</sup> {t}</p>)}</div>
-    return <>{Array.from({ length: Math.max(r.to, r.from) - r.from + 1 }, (_, k) => r.from + k).map(c => <div key={c}>{r.to > r.from && <h4 className="font-semibold">{r.book} {c}</h4>}{(bk.chapters[c - 1] || []).map((t, v) => <p key={v}><sup>{v + 1}</sup> {t}</p>)}</div>)}</> }
+    return <>{Array.from({ length: Math.max(r.to, r.from) - r.from + 1 }, (_, k) => r.from + k).map(c => <div key={c}>{r.to > r.from && <h4 className="font-semibold">{bn(r.book, bible?.meta.language)} {c}</h4>}{(bk.chapters[c - 1] || []).map((t, v) => <p key={v}><sup>{v + 1}</sup> {t}</p>)}</div>)}</> }
   const textsOf = (r: PRead): string[] => { const bk = bible?.books.find(b => b.name.toLowerCase() === r.book.toLowerCase()); if (!bk) return []; if (r.vFrom) return (bk.chapters[r.from - 1] || []).slice(r.vFrom - 1, r.vTo || r.vFrom); return Array.from({ length: Math.max(r.to, r.from) - r.from + 1 }, (_, k) => r.from + k).flatMap(c => bk.chapters[c - 1] || []) }
   const speakDay = (r: PDay, key: string) => { if (talk === key) { stopSpeak(); setTalk(''); return } const texts = [r.title || '', r.body || '', ...reads(r).flatMap(textsOf)].filter(Boolean); setTalk(key); speak(texts, bible?.meta.language || 'english', rate, undefined, () => setTalk(''), (m) => { setTalk(''); alert('Could not play the voice (' + (m || 'unknown') + '). Check that a voice for this language is installed in your phone settings (Text-to-speech).') }) }
   const has = (k: string) => items.includes(k)
@@ -310,6 +319,7 @@ function BooksAdmin() {
 }
 
 function Saved() {
+  useBN()
   const [marks, setMarks] = useLS<Record<string, { color?: string; note?: string; bookmark?: boolean }>>('marks', {})
   const [idx, setIdx] = useState<Entry[]>([]); const [bibles, setBibles] = useState<Record<string, Bible>>({}); const [custom] = useLS<Bible[]>('customBibles', []); const [f, setF] = useState('all')
   useEffect(() => { get<Entry[]>('bibles/index.json').then(arr(setIdx)).catch(() => {}) }, [])
@@ -320,7 +330,7 @@ function Saved() {
     <div className="flex gap-3 text-sm">{['all', 'bookmarks', 'highlights', 'notes'].map(t => <button key={t} className={f === t ? 'font-bold underline' : ''} onClick={() => setF(t)}>{t}</button>)}</div>
     {!items.length && <p className="text-sm opacity-70">Nothing here yet. Use the star, the colored dots or the pencil on a Bible verse.</p>}
     {items.map(([k, m]) => { const [id, bk, ch, v] = k.split('|'); const t = bibles[id]?.books.find(b => b.name === bk)?.chapters[+ch]?.[+v]
-      return <div key={k} className={card + ' text-sm'} style={{ borderLeft: m.color ? `6px solid ${m.color}` : undefined }}><b>{m.bookmark ? '★ ' : ''}{bk} {+ch + 1}:{+v + 1}</b> <span className="opacity-60">({id})</span><p>{t || '…'}</p>{m.note && <p className="italic opacity-80">✎ {m.note}</p>}
+      return <div key={k} className={card + ' text-sm'} style={{ borderLeft: m.color ? `6px solid ${m.color}` : undefined }}><b>{m.bookmark ? '★ ' : ''}{bn(bk, bibles[id]?.meta.language)} {+ch + 1}:{+v + 1}</b> <span className="opacity-60">({id})</span><p>{t || '…'}</p>{m.note && <p className="italic opacity-80">✎ {m.note}</p>}
         <button className="text-xs underline" onClick={() => { const n = { ...marks }; delete n[k]; setMarks(n) }}>Remove</button></div> })}</div>
 }
 
@@ -532,6 +542,7 @@ function useBible(tr: string) {
 const STOP = new Set(['the', 'and', 'where', 'what', 'who', 'how', 'does', 'say', 'about', 'verse', 'bible', 'find', 'for', 'with', 'that', 'this', 'from', 'are', 'was', 'can', 'you'])
 
 function Ask({ settings, theme, opts }: any) {
+  useBN()
   const [pref, setPref] = useLS<string>('askBible', '')
   const trId = pref || opts.find((o: any) => /english/i.test(o.language || ''))?.id || settings.translation
   const bible = useBible(trId); const [q, setQ] = useState(''); const [res, setRes] = useState<any>(null); const [more, setMore] = useState(false)
@@ -558,7 +569,7 @@ function Ask({ settings, theme, opts }: any) {
     {!bible && <p className="text-sm">Loading the Bible…</p>}
     {res?.kind === 'care' && <div className="sd-card space-y-2"><p>I am sorry you are hurting. You matter, and you do not have to carry this alone. Please reach out right now to someone you trust, such as a pastor, a family member or a friend. You can also call your local emergency number or a crisis helpline. If you are in immediate danger, call emergency services.</p></div>}
     {res?.sections.map((sec: any, n: number) => sec.items.length > 0 && <div key={n} className="space-y-3">{sec.title && <h3 className="font-semibold">{sec.title} <span className="text-xs opacity-60">({sec.items.length})</span></h3>}
-      {(more ? sec.items : sec.items.slice(0, 8)).map((it: Hit, k: number) => <div key={k} className={card + ' space-y-2'}><b className="sd-gold">{it.ref}</b><p style={readerStyle(settings)}>{it.text}</p><div className="flex gap-2"><button className="sd-chip" onClick={() => open(it)}>Open chapter</button><button className="sd-chip" onClick={() => navigator.clipboard?.writeText(`${it.ref} — ${it.text}`)}>Copy</button></div></div>)}</div>)}
+      {(more ? sec.items : sec.items.slice(0, 8)).map((it: Hit, k: number) => <div key={k} className={card + ' space-y-2'}><b className="sd-gold">{refL(it, bible?.meta.language)}</b><p style={readerStyle(settings)}>{it.text}</p><div className="flex gap-2"><button className="sd-chip" onClick={() => open(it)}>Open chapter</button><button className="sd-chip" onClick={() => navigator.clipboard?.writeText(`${refL(it, bible?.meta.language)} — ${it.text}`)}>Copy</button></div></div>)}</div>)}
     {res?.sections.some((x: any) => x.items.length > 8) && !more && <button className="sd-chip" onClick={() => setMore(true)}>Show all results</button>}
     {res?.kind === 'none' && <p className="text-sm">No match. Try one word, a verse like John 3:16, or one of the topics above.</p>}
     {(theme.contact?.whatsapp || theme.contact?.email) && <div className="sd-card space-y-2"><p className="text-sm">Have a deeper question? Ask your church team.</p><div className="flex gap-2">{theme.contact.whatsapp && <a className="sd-btn" href={`https://wa.me/${theme.contact.whatsapp}?text=${encodeURIComponent(q)}`}>WhatsApp</a>}{theme.contact.email && <a className="sd-chip" href={`mailto:${theme.contact.email}?subject=Question&body=${encodeURIComponent(q)}`}>Email</a>}</div></div>}
@@ -569,7 +580,7 @@ const VOTD = ['John 3:16', 'Psalm 23:1', 'Philippians 4:13', 'Romans 8:28', 'Pro
 const notif = () => { try { const c = (window as any).Capacitor; return c?.isNativePlatform?.() ? c.Plugins?.LocalNotifications || null : null } catch { return null } }
 const verseFor = (b: Bible, day: number): Hit | null => { const order = shuf(VOTD, rng(Math.floor(day / VOTD.length) + 11)); for (let k = 0; k < order.length; k++) { const h = parseRef(b, order[(day + k) % order.length])[0]; if (h) return h } return null }
 const vnumOf = (h: Hit) => Number((h.ref.match(/:(\d+)/) || [])[1]) || 0
-const verseImage = (h: Hit): Promise<Blob | null> => new Promise(res => {
+const verseImage = (h: Hit, refText: string): Promise<Blob | null> => new Promise(res => {
   const c = document.createElement('canvas'); c.width = 1080; c.height = 1920; const x = c.getContext('2d')!
   const g = x.createLinearGradient(0, 0, 0, 1920); g.addColorStop(0, '#2a1f05'); g.addColorStop(1, '#0b0b0f'); x.fillStyle = g; x.fillRect(0, 0, 1080, 1920)
   x.strokeStyle = '#d4a017'; x.lineWidth = 6; x.strokeRect(60, 60, 960, 1800); x.textAlign = 'center'
@@ -577,30 +588,31 @@ const verseImage = (h: Hit): Promise<Blob | null> => new Promise(res => {
   x.fillStyle = '#fdf3d0'; x.font = 'italic 60px Georgia, serif'; const lines: string[] = []; let cur = ''
   for (const w of h.text.split(/\s+/)) { const t = cur ? cur + ' ' + w : w; if (x.measureText(t).width > 820 && cur) { lines.push(cur); cur = w } else cur = t } lines.push(cur)
   let y = 760; for (const l of lines) { x.fillText(l, 540, y); y += 84 }
-  x.fillStyle = '#d4a017'; x.font = '700 54px sans-serif'; x.fillText(h.ref, 540, y + 70)
+  x.fillStyle = '#d4a017'; x.font = '700 54px sans-serif'; x.fillText(refText, 540, y + 70)
   x.globalAlpha = 0.6; x.fillStyle = '#fdf3d0'; x.font = '34px sans-serif'; x.fillText('Salem Daily', 540, 1790)
   c.toBlob(b => res(b), 'image/png') })
 
 function VerseOfDay({ settings }: any) {
+  useBN()
   const bible = useBible(settings.translation); const h = bible ? verseFor(bible, dayNum(todayStr())) : null
   if (!h) return <div className="sd-card verse-card"><p className="text-sm opacity-70">Loading today's verse…</p></div>
   const open = () => { localStorage.setItem('sd:goto', JSON.stringify({ book: h.book, ch: h.ch, v: vnumOf(h) })); location.hash = '#/bible' }
-  const share = async () => { const text = `“${h.text}” — ${h.ref}`; try { if (typeof navigator.share === 'function') await navigator.share({ text }); else { await navigator.clipboard?.writeText(text); alert('Verse copied.') } } catch { /* cancelled */ } }
-  const picture = async () => { const b = await verseImage(h); if (!b) return; const f = new File([b], 'verse-of-the-day.png', { type: 'image/png' }); try { if (navigator.canShare?.({ files: [f] })) { await navigator.share({ files: [f] }); return } } catch { /* fall through */ } const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'verse-of-the-day.png'; a.click() }
+  const share = async () => { const text = `“${h.text}” — ${refL(h, bible?.meta.language)}`; try { if (typeof navigator.share === 'function') await navigator.share({ text }); else { await navigator.clipboard?.writeText(text); alert('Verse copied.') } } catch { /* cancelled */ } }
+  const picture = async () => { const b = await verseImage(h, refL(h, bible?.meta.language)); if (!b) return; const f = new File([b], 'verse-of-the-day.png', { type: 'image/png' }); try { if (navigator.canShare?.({ files: [f] })) { await navigator.share({ files: [f] }); return } } catch { /* fall through */ } const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'verse-of-the-day.png'; a.click() }
   return <div className="sd-card verse-card rise" role="button" onClick={open}>
     <div className="text-xs tracking-widest uppercase sd-gold">✨ Verse of the day · {new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</div>
     <p className="verse-text">“{h.text}”</p>
-    <div className="flex items-center justify-between"><b className="sd-gold">{h.ref}</b><span className="text-xs opacity-60">Tap to read the chapter ›</span></div>
+    <div className="flex items-center justify-between"><b className="sd-gold">{refL(h, bible?.meta.language)}</b><span className="text-xs opacity-60">Tap to read the chapter ›</span></div>
     <div className="flex gap-2 mt-3" onClick={e => e.stopPropagation()}><button className="sd-chip" onClick={share}>↗ Share</button><button className="sd-chip" onClick={picture}>🖼 Save as picture</button></div></div>
 }
 
 function Reminder({ settings, remind }: any) {
   const bible = useBible(settings.translation)
   useEffect(() => { const n = notif(); if (!n) return
-    ;(async () => { try { const pend = await n.getPending(); if (pend?.notifications?.length) await n.cancel({ notifications: pend.notifications }); if (!remind.on || !bible) return
+    ;(async () => { try { await bnLoad(); const pend = await n.getPending(); if (pend?.notifications?.length) await n.cancel({ notifications: pend.notifications }); if (!remind.on || !bible) return
       const p = await n.requestPermissions(); if (p.display !== 'granted') return
       const [hh, mm] = (remind.time || '07:00').split(':').map(Number); const list: any[] = []
-      for (let k = 0; k < 30; k++) { const at = new Date(); at.setDate(at.getDate() + k); at.setHours(hh, mm, 0, 0); if (at.getTime() < Date.now() + 30000) continue; const v = verseFor(bible, dayNum(todayStr(k))); if (v) list.push({ id: 2000 + k, title: '📖 Verse of the day', body: `${v.text} — ${v.ref}`, schedule: { at, allowWhileIdle: true } }) }
+      for (let k = 0; k < 30; k++) { const at = new Date(); at.setDate(at.getDate() + k); at.setHours(hh, mm, 0, 0); if (at.getTime() < Date.now() + 30000) continue; const v = verseFor(bible, dayNum(todayStr(k))); if (v) list.push({ id: 2000 + k, title: '📖 Verse of the day', body: `${v.text} — ${refL(v, bible.meta.language)}`, schedule: { at, allowWhileIdle: true } }) }
       if (list.length) await n.schedule({ notifications: list }) } catch { /* ignore */ } })() }, [bible?.meta.id, remind.on, remind.time])
   return null
 }
