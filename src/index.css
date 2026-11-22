@@ -65,3 +65,10 @@ body{background-attachment:scroll!important}
 .tile-ico{width:48px;height:48px;border-radius:14px;display:grid;place-items:center;font-size:1.6rem;background:linear-gradient(135deg,rgba(245,211,106,.28),rgba(212,160,23,.12));flex:none}
 .ws-cell{transition:background .12s,transform .12s}
 .ws-found{animation:popin .4s}
+@media (max-width:640px){
+header nav{display:grid!important;grid-template-columns:repeat(6,minmax(0,1fr));gap:2px!important;flex-wrap:nowrap!important;padding:.3rem .25rem!important}
+.tab{padding:.3rem .1rem!important;font-size:.6rem!important;min-width:0;justify-content:center}
+.tab span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tab svg{width:20px;height:20px}
+.max-w-2xl{padding-bottom:calc(6.8rem + env(safe-area-inset-bottom))!important}
+}
