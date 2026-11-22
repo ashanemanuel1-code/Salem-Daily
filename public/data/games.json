@@ -53,6 +53,11 @@
      "Genesis"
     ]
    ]
+  ],
+  "books": [
+   "Proverbs",
+   "Ecclesiastes",
+   "1 Kings"
   ]
  },
  {
@@ -109,6 +114,11 @@
      "Solomon"
     ]
    ]
+  ],
+  "books": [
+   "Psalms",
+   "1 Samuel",
+   "2 Samuel"
   ]
  },
  {
@@ -165,6 +175,11 @@
      "Eleazar"
     ]
    ]
+  ],
+  "books": [
+   "Exodus",
+   "Numbers",
+   "Deuteronomy"
   ]
  },
  {
@@ -221,6 +236,12 @@
      "Bethany"
     ]
    ]
+  ],
+  "books": [
+   "Matthew",
+   "Mark",
+   "Luke",
+   "John"
   ]
  },
  {
@@ -277,6 +298,10 @@
      "Water"
     ]
    ]
+  ],
+  "books": [
+   "Matthew",
+   "Luke"
   ]
  },
  {
@@ -333,6 +358,11 @@
      "Jael"
     ]
    ]
+  ],
+  "books": [
+   "Ruth",
+   "Esther",
+   "Luke"
   ]
  },
  {
@@ -389,6 +419,12 @@
      "Hosea"
     ]
    ]
+  ],
+  "books": [
+   "Isaiah",
+   "Jeremiah",
+   "Daniel",
+   "Jonah"
   ]
  },
  {
@@ -445,6 +481,13 @@
      "Andrew"
     ]
    ]
+  ],
+  "books": [
+   "Romans",
+   "Galatians",
+   "Ephesians",
+   "Philippians",
+   "Colossians"
   ]
  },
  {
@@ -501,6 +544,9 @@
      "One hundred"
     ]
    ]
+  ],
+  "books": [
+   "Genesis"
   ]
  },
  {
@@ -557,6 +603,9 @@
      "Genesis 1"
     ]
    ]
+  ],
+  "books": [
+   "Psalms"
   ]
  }
 ]

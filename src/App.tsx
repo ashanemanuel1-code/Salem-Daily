@@ -45,14 +45,20 @@ const nativeTTS = () => { try { const c = (window as any).Capacitor; if (!c?.isN
 const speechOK = () => canSpeak || !!nativeTTS()
 const langOf = (t: string) => /[\u0B80-\u0BFF]/.test(t) ? 'tamil' : /[\u0D80-\u0DFF]/.test(t) ? 'sinhala' : 'english'
 const stopSpeak = () => { tk++; if (nActive) { nActive = false; Promise.resolve(nativeTTS()?.stop?.()).catch(() => {}) } if (canSpeak) speechSynthesis.cancel() }
+const voiceMap = (): Record<string, string> => { try { return JSON.parse(localStorage.getItem('sd:ttsVoices') || '{}') } catch { return {} } }
+const rateNow = (d: number) => { try { return Number(JSON.parse(localStorage.getItem('sd:ttsRate') || '')) || d } catch { return d } }
+const listVoices = async (l2: string): Promise<string[]> => { try { const nt = nativeTTS(); if (nt) { const r = await nt.getSupportedVoices(); return (r.voices || []).filter((v: any) => (v.lang || '').toLowerCase().startsWith(l2)).map((v: any) => v.name || v.voiceURI) } if (canSpeak) return speechSynthesis.getVoices().filter(v => v.lang.toLowerCase().startsWith(l2)).map(v => v.name) } catch { /* none */ } return [] }
+const FEM = /female|woman|zira|samantha|susan|hazel|karen|moira|tessa|victoria|fiona|vani|kanmani|heera|aria|jenny/i
+const MALE = /(^|[^e])male|david|mark|daniel|alex|fred|george|ravi|valluvar|prabhat|guy|james/i
 const speak = (texts: string[], language: string, rate: number, onIdx?: (i: number) => void, onDone?: () => void, onFail?: (m?: string) => void) => {
   if (!texts.length) return
-  stopSpeak(); const my = ++tk
-  const lang = LANGCODE[language.toLowerCase()] || 'en-US'
+  stopSpeak(); const my = ++tk; rate = rateNow(rate)
+  const lang = LANGCODE[language.toLowerCase()] || 'en-US'; const vn = voiceMap()[lang.slice(0, 2)]
   const nt = nativeTTS()
-  if (nt) { nActive = true; (async () => { for (let i = 0; i < texts.length; i++) { if (my !== tk) return; onIdx?.(i); try { await nt.speak({ text: texts[i], lang, rate, pitch: 1, volume: 1, category: 'ambient' }) } catch (e: any) { if (my === tk) { nActive = false; onFail?.(String(e?.message || e)) } return } } nActive = false; if (my === tk) onDone?.() })(); return }
+  if (nt) { nActive = true; (async () => { let vi: number | undefined; if (vn) { try { const r = await nt.getSupportedVoices(); const k = (r.voices || []).findIndex((v: any) => (v.name || v.voiceURI) === vn); if (k >= 0) vi = k } catch { /* default voice */ } }
+    for (let i = 0; i < texts.length; i++) { if (my !== tk) return; onIdx?.(i); try { await nt.speak({ text: texts[i], lang, rate, pitch: 1, volume: 1, voice: vi, category: 'ambient' }) } catch (e: any) { if (my === tk) { nActive = false; onFail?.(String(e?.message || e)) } return } } nActive = false; if (my === tk) onDone?.() })(); return }
   if (!canSpeak) { onFail?.('no speech engine'); return }
-  const voice = speechSynthesis.getVoices().find(v => v.lang.replace('_', '-').toLowerCase().startsWith(lang.slice(0, 2)))
+  const all = speechSynthesis.getVoices(); const voice = (vn ? all.find(v => v.name === vn) : undefined) || all.find(v => v.lang.replace('_', '-').toLowerCase().startsWith(lang.slice(0, 2)))
   texts.forEach((t, i) => { const u = new SpeechSynthesisUtterance(t); u.lang = lang; u.rate = rate; if (voice) u.voice = voice; u.onstart = () => { if (my === tk) onIdx?.(i) }; u.onerror = e => { if (my === tk && e.error !== 'interrupted' && e.error !== 'canceled') onFail?.(e.error) }; if (i === texts.length - 1) u.onend = () => { if (my === tk) onDone?.() }; speechSynthesis.speak(u) })
 }
 const BOOK_LIST = Object.values(NAMES)
@@ -109,7 +115,7 @@ function Bible({ settings, setSettings, opts }: { settings: any; setSettings: an
   useEffect(() => () => stopSpeak(), [])
   useEffect(() => { if (!bible) return; const g = ls<any>('goto', null); if (g) { const k = bible.books.findIndex(b => b.name === g.book); if (k >= 0) { setBi(k); setCi(g.ch - 1) } localStorage.removeItem('sd:goto') } }, [bible])
   if (!bible) return <p>Loading Bible… (no translation available yet — import one in Admin)</p>
-  const book = bible.books[bi] ?? bible.books[0]; const verses = book.chapters[ci] ?? []; const play = () => startReading(verses); const playFrom = (n: number) => startReading(verses.slice(n), n)
+  const book = bible.books[bi] ?? bible.books[0]; const verses = book.chapters[ci] ?? []; const play = () => startReading(verses); const playFrom = (n: number) => startReading(verses.slice(n), n); const changeRate = (r: number) => { setRate(r); localStorage.setItem('sd:ttsRate', JSON.stringify(r)); if (playing) { const from = Math.max(cur, 0); startReading(verses.slice(from), from) } }
   const hits = q.length > 2 ? bible.books.flatMap(b => b.chapters.flatMap((c, i) => c.map((t, v) => ({ b: b.name, i, v, t })))).filter(x => x.t.toLowerCase().includes(q.toLowerCase())).slice(0, 30) : []
   const key = (v: number) => `${bible.meta.id}|${book.name}|${ci}|${v}`
   const set = (v: number, p: object) => setMarks({ ...marks, [key(v)]: { ...marks[key(v)], ...p } })
@@ -123,7 +129,7 @@ function Bible({ settings, setSettings, opts }: { settings: any; setSettings: an
     <input className={card + ' w-full'} placeholder="Search this translation…" value={q} onChange={e => setQ(e.target.value)} />
     {hits.map((h, k) => <p key={k} className="text-sm">{h.b} {h.i + 1}:{h.v + 1} — {h.t}</p>)}
     {!speechOK() && <p className="text-xs opacity-60">🔇 Voice reading is not available on this device.</p>}
-    {speechOK() && <div className="flex flex-wrap items-center gap-2"><button className="sd-btn" onClick={playing ? stop : play}>{playing ? '■ Stop' : '▶ Listen'}</button>{[0.8, 1, 1.25].map(r => <button key={r} className={'sd-chip' + (rate === r ? ' on' : '')} onClick={() => setRate(r)}>{r}×</button>)}<label className="text-xs flex items-center gap-1"><input type="checkbox" checked={auto} onChange={e => setAuto(e.target.checked)} />Next chapter</label><span className="text-xs opacity-50">{nativeTTS() ? 'phone voice' : 'browser voice'}</span></div>}
+    {speechOK() && <div className="flex flex-wrap items-center gap-2"><button className="sd-btn" onClick={playing ? stop : play}>{playing ? '■ Stop' : '▶ Listen'}</button>{[0.75, 1, 1.25, 1.5, 2].map(r => <button key={r} className={'sd-chip' + (rate === r ? ' on' : '')} onClick={() => changeRate(r)}>{r}×</button>)}<label className="text-xs flex items-center gap-1"><input type="checkbox" checked={auto} onChange={e => setAuto(e.target.checked)} />Next chapter</label><span className="text-xs opacity-50">{nativeTTS() ? 'phone voice' : 'browser voice'}</span></div>}
     {speechOK() && bible.meta.language.toLowerCase() !== 'english' && <p className="text-xs opacity-60">Listening needs a {bible.meta.language} voice installed on your phone (Settings → Text-to-speech).</p>}
     <div style={readerStyle(settings)} className="space-y-2">{verses.map((t, v) => { const m = marks[key(v)] || {}; return <p key={v} ref={el => { if (el && cur === v) el.scrollIntoView({ block: 'center', behavior: 'smooth' }) }} onClick={() => setSel(v)} style={{ background: cur === v ? 'color-mix(in srgb, var(--gold) 28%, transparent)' : m.color ? m.color + '55' : undefined, cursor: 'pointer' }} className="rounded px-1 transition-colors">
       {settings.vnums && <sup className="mr-1">{v + 1}</sup>}{t}{m.bookmark && <span className="sd-gold"> ★</span>}{m.note && <span className="opacity-70"> ✎</span>}</p> })}
@@ -346,6 +352,11 @@ function Admin() {
 const readerStyle = (st: any) => ({ fontSize: st.font, lineHeight: st.spacing, fontFamily: st.serif ? 'Georgia, "Times New Roman", serif' : undefined })
 
 function SettingsPage({ name, setName, settings, setSettings, opts, restore, theme }: any) {
+  const [rate, setRate] = useLS<number>('ttsRate', 1); const [vm, setVm] = useLS<Record<string, string>>('ttsVoices', {}); const [pk, setPk] = useState(''); const [vl, setVl] = useState<string[]>([])
+  const LN: Record<string, string> = { en: 'english', ta: 'tamil', si: 'sinhala' }; const SAMPLE: Record<string, string> = { en: 'Hello, this is how I will read to you.', ta: 'வணக்கம், இப்படித்தான் நான் வாசிப்பேன்.', si: 'ආයුබෝවන්.' }
+  const save = (l: string, n: string) => { const m = { ...vm, [l]: n }; localStorage.setItem('sd:ttsVoices', JSON.stringify(m)); setVm(m); speak([SAMPLE[l]], LN[l], rate) }
+  const pickGender = async (l: string, g: 'f' | 'm') => { const n = (await listVoices(l)).find(x => (g === 'f' ? FEM : MALE).test(x)); if (n) save(l, n); else alert('No ' + (g === 'f' ? 'female' : 'male') + ' voice was found for this language on your phone. Use Choose to see the voices you have.') }
+  const choose = async (l: string) => { setVl(await listVoices(l)); setPk(l) }
   const up = (p: object) => setSettings({ ...settings, ...p })
   const row = 'flex items-center justify-between gap-3 py-1'
   const chip = (on: boolean) => 'sd-chip' + (on ? ' on' : '')
@@ -355,6 +366,11 @@ function SettingsPage({ name, setName, settings, setSettings, opts, restore, the
       <div className="flex gap-2">{[['dark', '🌙 Dark'], ['light', '☀️ Light'], ['auto', '🌓 Auto']].map(([m, l]) => <button key={m} className={chip(settings.mode === m)} onClick={() => up({ mode: m })}>{l}</button>)}</div>
       <div className="flex gap-3 items-center"><span className="text-sm">Accent</span>{['#d4a017', '#38bdf8', '#fb7185', '#4ade80', '#a78bfa'].map(c => <button key={c} aria-label={c} className="w-7 h-7 rounded-full" style={{ background: c, boxShadow: settings.accent === c ? '0 0 0 3px var(--ink)' : 'none' }} onClick={() => up({ accent: c })} />)}</div>
       <label className={row}>Animations<input type="checkbox" checked={settings.motion} onChange={e => up({ motion: e.target.checked })} /></label></div>
+    <div className="sd-card space-y-3"><h3 className="sd-gold font-semibold">Voice and speed</h3>
+      <label className={row}>Speed {rate}×<input type="range" min={0.5} max={2} step={0.1} value={rate} onChange={e => { const r = +e.target.value; localStorage.setItem('sd:ttsRate', JSON.stringify(r)); setRate(r) }} /></label>
+      {[['en', 'English'], ['ta', 'Tamil'], ['si', 'Sinhala']].map(([l, n]) => <div key={l} className="flex flex-wrap items-center gap-2 text-sm"><span className="w-16">{n}</span><button className="sd-chip" onClick={() => pickGender(l, 'f')}>👩 Female</button><button className="sd-chip" onClick={() => pickGender(l, 'm')}>👨 Male</button><button className="sd-chip" onClick={() => choose(l)}>Choose</button><button className="sd-chip" onClick={() => speak([SAMPLE[l]], LN[l], rate)}>▶ Test</button><span className="w-full text-xs opacity-60">{vm[l] || 'Default voice'}</span></div>)}
+      <p className="text-xs opacity-60">The voices come from your phone. Install more in your phone Settings, under Language, then Text-to-speech.</p>
+      {pk && <Sheet title="Choose a voice" onClose={() => setPk('')}>{vl.length ? vl.map(v => <button key={v} className={'opt' + (vm[pk] === v ? ' on' : '')} onClick={() => save(pk, v)}>{v}</button>) : <p className="text-sm">No voices found for this language. Install one in your phone Text-to-speech settings.</p>}<button className="sd-chip mt-2" onClick={() => { save(pk, ''); setPk('') }}>Use the default voice</button></Sheet>}</div>
     <div className="sd-card space-y-2"><h3 className="sd-gold font-semibold">Reading</h3>
       {opts.length > 0 && <div className={row}>Bible<BiblePicker opts={opts} settings={settings} setSettings={setSettings} /></div>}
       <label className={row}>Text size {settings.font}px<input type="range" min={14} max={32} value={settings.font} onChange={e => up({ font: +e.target.value })} /></label>
@@ -371,45 +387,118 @@ function SettingsPage({ name, setName, settings, setSettings, opts, restore, the
     <div className="text-center space-y-2"><button className="sd-chip" onClick={async () => { const rs = await navigator.serviceWorker?.getRegistrations(); await Promise.all((rs || []).map(r => r.unregister())); const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); location.reload() }}>↻ Get the latest version now</button><p className="text-xs opacity-60">Salem Daily · the app updates itself whenever new content is published.</p></div></div>
 }
 
-type GTheme = { name: string; emoji: string; intro: string; words: [string, string][]; quiz: [string, string, string[]][] }
-type GQ = { kind: 'scr' | 'quiz'; q: string; a: string; opts?: string[]; show?: string }
+type GTheme = { name: string; emoji: string; intro: string; books?: string[]; words: [string, string][]; quiz: [string, string, string[]][] }
+type GQ = { kind: 'scr' | 'quiz' | 'cloze'; q: string; a: string; opts?: string[]; show?: string }
 const rng = (a: number) => () => { a += 0x6D2B79F5; let t = a; t = Math.imul(t ^ t >>> 15, t | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296 }
 const shuf = <T,>(a: T[], r: () => number) => { const b = [...a]; for (let i = b.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [b[i], b[j]] = [b[j], b[i]] } return b }
 const scramble = (w: string, r: () => number) => { let x = w; for (let k = 0; k < 12 && x === w; k++) x = shuf(w.split(''), r).join(''); return x }
 const todayStr = (off = 0) => new Date(Date.now() + off * 864e5).toLocaleDateString('en-CA')
 const dayNum = (d: string) => { const [y, m, dd] = d.split('-').map(Number); return Math.floor(Date.UTC(y, m - 1, dd) / 864e5) }
-const buildQs = (t: GTheme, r: () => number): GQ[] => [...shuf(t.words, r).map(([w, h]) => ({ kind: 'scr' as const, q: scramble(w, r), a: w, show: h })), ...shuf(t.quiz, r).map(([q, a, w]) => ({ kind: 'quiz' as const, q, a, opts: shuf([a, ...w], r) }))]
+type GV = { ref: string; book: string; text: string }
+const vcache = new Map<string, GV[]>(); const wcache = new Map<string, Set<string>>()
+const versesOf = (b: Bible): GV[] => { let v = vcache.get(b.meta.id); if (!v) { const out: GV[] = []; for (const bk of b.books) bk.chapters.forEach((c, ci) => c.forEach((t, vi) => out.push({ ref: `${bk.name} ${ci + 1}:${vi + 1}`, book: bk.name, text: t }))); v = out; vcache.set(b.meta.id, v) } return v }
+const vocabOf = (b: Bible) => { let w = wcache.get(b.meta.id); if (!w) { const set = new Set<string>(); for (const v of versesOf(b)) for (const x of v.text.toLowerCase().match(/[a-z]+/g) || []) if (x.length >= 3 && x.length <= 9) set.add(x); w = set; wcache.set(b.meta.id, w) } return w }
+const STOPW = new Set(['which', 'their', 'there', 'these', 'those', 'about', 'shall', 'would', 'could', 'unto', 'thee', 'thou', 'thy', 'hath', 'have', 'with', 'that', 'this', 'from', 'they', 'them', 'were', 'been', 'will', 'what', 'when', 'your', 'every', 'because'])
+const pickVerses = (b: Bible, books: string[] | null | undefined, r: () => number, n: number) => shuf(versesOf(b).filter(v => (!books || !books.length || books.includes(v.book)) && v.text.length >= 70 && v.text.length <= 170), r).slice(0, n)
+const clozeQ = (v: GV, r: () => number, hint: boolean): GQ | null => { const ws = (v.text.match(/[A-Za-z]{5,}/g) || []).filter(w => !STOPW.has(w.toLowerCase())); if (!ws.length) return null; const w = ws[Math.floor(r() * ws.length)]; return { kind: 'cloze', q: v.text.replace(new RegExp('\\b' + w + '\\b'), '_____'), a: w.toUpperCase(), show: hint ? `Starts with “${w[0].toUpperCase()}” · ${w.length} letters` : '' } }
+const bookQ = (v: GV, b: Bible, r: () => number): GQ => ({ kind: 'quiz', q: `Which book is this verse from?\n“${v.text}”`, a: v.book, opts: shuf([v.book, ...shuf(b.books.map(x => x.name).filter(n => n !== v.book), r).slice(0, 3)], r) })
+const buildDaily = (t: GTheme, b: Bible, day: string): GQ[] => { const r = rng(dayNum(day) * 7 + 3)
+  const words = shuf(t.words, r).sort((x, y) => y[0].length - x[0].length).slice(0, 2).map(([w, h]) => ({ kind: 'scr' as const, q: scramble(w, r), a: w, show: h }))
+  const quiz = shuf(t.quiz, r).slice(0, 2).map(([q, a, w]) => ({ kind: 'quiz' as const, q, a, opts: shuf([a, ...w], r) }))
+  const vs = pickVerses(b, t.books, r, 14); const cl = vs.slice(0, 6).map((v, i) => clozeQ(v, r, i === 0)).filter(Boolean).slice(0, 3) as GQ[]; const bk = vs.slice(6, 10).map(v => bookQ(v, b, r)).slice(0, 2)
+  return [...words, ...cl, ...bk, ...quiz] }
 
 function Play({ qs, title, onFinish, onExit }: { qs: GQ[]; title: string; onFinish: (s: number) => void; onExit: () => void }) {
   const [i, setI] = useState(0); const [score, setScore] = useState(0); const [g, setG] = useState(''); const [fb, setFb] = useState(''); const [done, setDone] = useState(false)
   const q = qs[i]
   const next = (ok: boolean) => { const s = score + (ok ? 1 : 0); setScore(s); setG(''); setFb(''); if (i + 1 >= qs.length) { setDone(true); onFinish(s) } else setI(i + 1) }
-  const answer = (ok: boolean) => { if (fb) return; setFb(ok ? '✓ Correct!' : 'The answer was: ' + q.a); setTimeout(() => next(ok), ok ? 800 : 1500) }
+  const answer = (ok: boolean) => { if (fb) return; setFb(ok ? '✓ Correct!' : 'The answer was: ' + q.a); setTimeout(() => next(ok), ok ? 800 : 1600) }
+  const check = () => answer(g.trim().toUpperCase() === q.a.toUpperCase())
   if (done) return <div className="sd-card text-center space-y-3"><h3 className="sd-gold font-bold text-2xl">{score} / {qs.length}</h3><p>{score === qs.length ? 'Perfect! 🎉' : score >= qs.length / 2 ? 'Well done! 👏' : 'Keep practicing! 💪'}</p><button className="sd-btn" onClick={onExit}>Back to games</button></div>
   return <div className="space-y-3"><div className="flex justify-between text-sm"><button className="underline" onClick={onExit}>← Back</button><span>{title} · {i + 1}/{qs.length}</span></div>
     <div className="h-1 rounded bg-white/10"><div className="h-1 rounded" style={{ width: `${i * 100 / qs.length}%`, background: 'var(--gold)' }} /></div>
-    <div className="sd-card space-y-3 text-center">{q.kind === 'scr' ? <><p className="text-sm opacity-70">Unscramble the word</p><div className="flex flex-wrap justify-center gap-2">{q.q.split('').map((c, k) => <span key={k} className="sd-chip on text-lg">{c}</span>)}</div><p className="text-sm">Hint: {q.show}</p>
-      <input className="w-full rounded-lg px-3 py-2 text-center uppercase" value={g} onChange={e => setG(e.target.value)} onKeyDown={e => e.key === 'Enter' && answer(g.trim().toUpperCase() === q.a)} placeholder="Your answer" />
-      <div className="flex gap-2 justify-center"><button className="sd-btn" onClick={() => answer(g.trim().toUpperCase() === q.a)}>Check</button><button className="sd-chip" onClick={() => answer(false)}>Skip</button></div></>
-      : <><p className="font-semibold">{q.q}</p>{q.opts!.map(o => <button key={o} className={'opt' + (fb && o === q.a ? ' on' : '')} onClick={() => answer(o === q.a)}>{o}</button>)}</>}
+    <div className="sd-card space-y-3 text-center">{q.kind === 'quiz' ? <><p className="font-semibold whitespace-pre-wrap">{q.q}</p>{q.opts!.map(o => <button key={o} className={'opt' + (fb && o === q.a ? ' on' : '')} onClick={() => answer(o === q.a)}>{o}</button>)}</>
+      : <>{q.kind === 'scr' ? <><p className="text-sm opacity-70">Unscramble the word</p><div className="flex flex-wrap justify-center gap-2">{q.q.split('').map((c, k) => <span key={k} className="sd-chip on text-lg">{c}</span>)}</div></> : <><p className="text-sm opacity-70">Fill in the missing word</p><p className="font-semibold">“{q.q}”</p></>}
+        {q.show && <p className="text-sm">Hint: {q.show}</p>}
+        <input className="w-full rounded-lg px-3 py-2 text-center uppercase" value={g} onChange={e => setG(e.target.value)} onKeyDown={e => e.key === 'Enter' && check()} placeholder="Your answer" />
+        <div className="flex gap-2 justify-center"><button className="sd-btn" onClick={check}>Check</button><button className="sd-chip" onClick={() => answer(false)}>Skip</button></div></>}
       <p className="h-5 text-sm">{fb}</p></div></div>
 }
 
-function Games() {
+const LV: Record<string, number> = { a: 1, b: 3, c: 3, d: 2, e: 1, f: 4, g: 2, h: 4, i: 1, j: 8, k: 5, l: 1, m: 3, n: 1, o: 1, p: 3, q: 10, r: 1, s: 1, t: 1, u: 1, v: 4, w: 4, x: 8, y: 4, z: 10 }
+function WordBuilder({ bible, onDone, onExit }: { bible: Bible; onDone: (p: number) => void; onExit: () => void }) {
+  const vocab = vocabOf(bible)
+  const mk = (seed: number, rd: boolean) => { const sev = Array.from(vocab).filter(w => w.length === 7).sort(); const w = sev[Math.floor(rng(seed)() * sev.length)] || 'kingdom'; const letters = shuf(w.split(''), rd ? Math.random : rng(seed + 1)); const ok = (x: string) => { const c: Record<string, number> = {}; letters.forEach(l => { c[l] = (c[l] || 0) + 1 }); for (const ch of x) { if (!c[ch]) return false; c[ch]-- } return true }; return { letters, all: Array.from(vocab).filter(x => x.length >= 3 && ok(x)) } }
+  const [t, setT] = useState(() => mk(dayNum(todayStr()) + 1234, false)); const [found, setFound] = useState<string[]>([]); const [g, setG] = useState(''); const [msg, setMsg] = useState(''); const [fin, setFin] = useState(false)
+  const pts = (w: string) => w.split('').reduce((a, c) => a + (LV[c] || 0), 0) + (w.length === 7 ? 20 : 0); const total = found.reduce((a, w) => a + pts(w), 0)
+  const add = () => { const w = g.toLowerCase().trim(); setG(''); if (w.length < 3) return setMsg('Use at least 3 letters.'); if (found.includes(w)) return setMsg('You already found that.'); if (!t.all.includes(w)) return setMsg('Not a word from the Bible, or the letters do not fit.'); setFound([...found, w]); setMsg(`✓ ${w.toUpperCase()} +${pts(w)}`) }
+  if (fin) return <div className="sd-card text-center space-y-3"><h3 className="sd-gold font-bold text-2xl">{total} points</h3><p>You found {found.length} of {t.all.length} words.</p><button className="sd-btn" onClick={onExit}>Back to games</button></div>
+  return <div className="space-y-3 text-center"><div className="flex justify-between text-sm"><button className="underline" onClick={onExit}>← Back</button><span>Word Builder · {found.length}/{t.all.length} words</span></div>
+    <div className="sd-card space-y-3"><p className="text-sm opacity-70">Make words from these letters. Every word must appear in the Bible.</p><div className="flex justify-center gap-2">{t.letters.map((c, k) => <span key={k} className="sd-chip on text-xl relative">{c.toUpperCase()}<sub className="text-[9px]">{LV[c]}</sub></span>)}</div>
+      <input className="w-full rounded-lg px-3 py-2 text-center uppercase" value={g} onChange={e => setG(e.target.value)} onKeyDown={e => e.key === 'Enter' && add()} placeholder="Type a word" />
+      <div className="flex gap-2 justify-center flex-wrap"><button className="sd-btn" onClick={add}>Add</button><button className="sd-chip" onClick={() => setT({ ...t, letters: shuf(t.letters, Math.random) })}>Shuffle</button><button className="sd-chip" onClick={() => { setT(mk(Math.floor(Math.random() * 1e6), true)); setFound([]); setMsg('') }}>New letters</button><button className="sd-chip" onClick={() => { onDone(Math.min(60, Math.floor(total / 3))); setFin(true) }}>Finish</button></div>
+      <p className="h-5 text-sm">{msg}</p><p className="sd-gold font-bold">{total} points</p><div className="flex flex-wrap justify-center gap-1 text-sm">{found.map(w => <span key={w} className="sd-chip">{w}</span>)}</div></div></div>
+}
+
+const GOODREFS = ['John 3:16', 'Psalm 23:1', 'Philippians 4:13', 'Romans 8:28', 'Proverbs 3:5', 'Jeremiah 29:11', 'Isaiah 41:10', 'Matthew 11:28', 'John 14:6', 'Psalm 46:1', 'Romans 12:2', 'Joshua 1:9', '1 John 4:19', 'Psalm 119:105', 'John 1:1', 'Genesis 1:1', 'Matthew 5:16', 'Hebrews 11:1', '2 Timothy 1:7', 'Psalm 27:1', 'Proverbs 18:10', 'John 8:32', 'Ephesians 2:8', 'Romans 6:23', 'Psalm 118:24', 'Matthew 6:33', 'Isaiah 40:31', 'Psalm 121:1', 'John 15:5']
+function VerseBuilder({ bible, onDone, onExit }: { bible: Bible; onDone: (p: number) => void; onExit: () => void }) {
+  const pick = (r: () => number) => { for (const ref of shuf(GOODREFS, r)) { const h = parseRef(bible, ref)[0]; if (h && h.text.split(/\s+/).length <= 24) return h } return null }
+  const init = (r: () => number) => { const h = pick(r); return { h, order: h ? shuf(h.text.split(/\s+/).map((_, i) => i), Math.random) : [] } }
+  const [st, setSt] = useState(() => init(rng(dayNum(todayStr()) + 99))); const [built, setBuilt] = useState<number[]>([]); const [mist, setMist] = useState(0); const [done, setDone] = useState(false); const [paid, setPaid] = useState(false)
+  const h = st.h; if (!h) return <p className="text-sm">No verse found.</p>
+  const toks = h.text.split(/\s+/)
+  const tap = (idx: number) => { if (done) return; if (toks[idx] === toks[built.length]) { const nb = [...built, idx]; setBuilt(nb); if (nb.length === toks.length) { setDone(true); if (!paid) { setPaid(true); onDone(Math.max(2, 10 - mist)) } } } else setMist(mist + 1) }
+  const again = () => { setSt(init(Math.random)); setBuilt([]); setMist(0); setDone(false) }
+  return <div className="space-y-3 text-center"><div className="flex justify-between text-sm"><button className="underline" onClick={onExit}>← Back</button><span>Verse Builder · {mist} mistakes</span></div>
+    <div className="sd-card space-y-3"><p className="text-sm opacity-70">Tap the words in the right order to build the verse.</p><p className="min-h-[3rem] font-semibold">{built.map(i => toks[i]).join(' ') || '…'}</p>
+      <div className="flex flex-wrap justify-center gap-2">{st.order.filter(i => !built.includes(i)).map(i => <button key={i} className="sd-chip" onClick={() => tap(i)}>{toks[i]}</button>)}</div>
+      {done && <><p className="sd-gold font-bold">✓ {h.ref}</p><button className="sd-btn" onClick={again}>Another verse</button></>}</div></div>
+}
+
+function WordSearch({ theme, onDone, onExit }: { theme: GTheme; onDone: (p: number) => void; onExit: () => void }) {
+  const N = 10
+  const [g] = useState(() => { const r = rng(dayNum(todayStr()) + 5); const ws = shuf(theme.words.map(x => x[0]).filter(w => w.length <= N), r).slice(0, 6); const grid: string[][] = Array.from({ length: N }, () => Array(N).fill('')); const dirs = [[0, 1], [1, 0], [1, 1], [0, -1]]; const placed: string[] = []
+    for (const w of ws) for (let t = 0; t < 80; t++) { const [dr, dc] = dirs[Math.floor(r() * dirs.length)]; const r0 = Math.floor(r() * N), c0 = Math.floor(r() * N); const r1 = r0 + dr * (w.length - 1), c1 = c0 + dc * (w.length - 1); if (r1 < 0 || r1 >= N || c1 < 0 || c1 >= N) continue; let ok = true; for (let k = 0; k < w.length; k++) { const ch = grid[r0 + dr * k][c0 + dc * k]; if (ch && ch !== w[k]) { ok = false; break } } if (!ok) continue; for (let k = 0; k < w.length; k++) grid[r0 + dr * k][c0 + dc * k] = w[k]; placed.push(w); break }
+    const A = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'; for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) if (!grid[i][j]) grid[i][j] = A[Math.floor(r() * 26)]
+    return { grid, placed } })
+  const [a, setA] = useState<number[] | null>(null); const [found, setFound] = useState<string[]>([]); const [cells, setCells] = useState<string[]>([]); const [paid, setPaid] = useState(false)
+  const tap = (i: number, j: number) => { if (!a) return setA([i, j]); const lr = Math.abs(i - a[0]), lc = Math.abs(j - a[1]); setA(null); if (!(lr === 0 || lc === 0 || lr === lc)) return; const n = Math.max(lr, lc) + 1; const dr = Math.sign(i - a[0]), dc = Math.sign(j - a[1]); const co: string[] = []; let str = ''; for (let k = 0; k < n; k++) { const x = a[0] + dr * k, y = a[1] + dc * k; co.push(x + ',' + y); str += g.grid[x][y] }
+    const w = g.placed.find(p => p === str || p === str.split('').reverse().join('')); if (!w || found.includes(w)) return; const nf = [...found, w]; setFound(nf); setCells([...cells, ...co]); if (nf.length === g.placed.length && !paid) { setPaid(true); onDone(nf.length * 10) } }
+  return <div className="space-y-3 text-center"><div className="flex justify-between text-sm"><button className="underline" onClick={onExit}>← Back</button><span>Word Search · {found.length}/{g.placed.length}</span></div>
+    <p className="text-sm opacity-70">Tap the first letter, then the last letter of a word. Theme: {theme.emoji} {theme.name}</p>
+    <div className="grid grid-cols-10 gap-1">{g.grid.map((row, i) => row.map((c, j) => <button key={i + '-' + j} className="aspect-square rounded text-sm font-semibold" style={{ background: cells.includes(i + ',' + j) ? 'var(--gold)' : a && a[0] === i && a[1] === j ? 'rgba(212,160,23,.5)' : 'rgba(255,255,255,.07)', color: cells.includes(i + ',' + j) ? '#1a1200' : undefined }} onClick={() => tap(i, j)}>{c}</button>))}</div>
+    <div className="flex flex-wrap justify-center gap-2 text-sm">{g.placed.map(w => <span key={w} className={'sd-chip' + (found.includes(w) ? ' on' : '')}>{w}</span>)}</div>
+    {found.length === g.placed.length && <p className="sd-gold font-bold">🎉 All words found!</p>}</div>
+}
+
+function Games({ settings, opts }: any) {
   const [themes, setThemes] = useState<GTheme[]>([]); const [gp, setGp] = useLS<any>('games', { streak: 0, last: '', done: {}, score: 0, level: 1 }); const [mode, setMode] = useState<any>(null)
+  const en = opts.find((o: any) => /english/i.test(o.language || ''))?.id || settings.translation; const bible = useBible(en)
   useEffect(() => { get<GTheme[]>('games.json').then(arr(setThemes)).catch(() => {}) }, [])
   const day = todayStr(); const theme = themes.length ? themes[dayNum(day) % themes.length] : null; const best = gp.done?.[day]
-  const finishDaily = (s: number) => { const streak = gp.last === day ? gp.streak : gp.last === todayStr(-1) ? gp.streak + 1 : 1; setGp({ ...gp, streak, last: day, done: { ...gp.done, [day]: Math.max(s, best || 0) }, score: gp.score + (best === undefined ? s * 10 : 0) }) }
-  const finishLevel = (L: number, s: number) => setGp({ ...gp, score: gp.score + s * 5, level: s >= 4 && L === gp.level ? Math.min(5, L + 1) : gp.level })
-  const levelQs = (L: number): GQ[] => { const [a, b] = ([[1, 5], [6, 6], [7, 7], [8, 8], [9, 99]] as [number, number][])[L - 1]; const pool = themes.flatMap(t => t.words).filter(([w]) => w.length >= a && w.length <= b); return shuf(pool, Math.random).slice(0, 5).map(([w, h]) => ({ kind: 'scr' as const, q: scramble(w, Math.random), a: w, show: h })) }
-  if (mode) return <Play key={mode.title} qs={mode.qs} title={mode.title} onFinish={s => mode.L ? finishLevel(mode.L, s) : finishDaily(s)} onExit={() => setMode(null)} />
-  const names = ['Beginner', 'Reader', 'Scholar', 'Teacher', 'Master']
-  return <div className="space-y-4"><h2 className="font-bold sd-gold">Games</h2><div className="flex gap-4 text-sm"><span>🔥 Streak {gp.streak}</span><span>⭐ {gp.score} points</span></div>
+  const award = (key: string, pts: number) => { if (gp.paid?.[key + day]) return; setGp({ ...gp, score: gp.score + pts, paid: { ...gp.paid, [key + day]: 1 } }) }
+  const finishDaily = (sc: number) => { const streak = gp.last === day ? gp.streak : gp.last === todayStr(-1) ? gp.streak + 1 : 1; setGp({ ...gp, streak, last: day, done: { ...gp.done, [day]: Math.max(sc, best || 0) }, score: gp.score + (best === undefined ? sc * 10 : 0) }) }
+  const finishLevel = (L: number, sc: number) => setGp({ ...gp, score: gp.score + sc * 5, level: sc >= 4 && L === gp.level ? Math.min(5, L + 1) : gp.level })
+  const levelQs = (L: number): GQ[] => { const r = Math.random; const pool = themes.flatMap(t => t.words)
+    const sc = (lo: number, hi: number, n: number, hint: boolean) => shuf(pool.filter(([w]) => w.length >= lo && w.length <= hi), r).slice(0, n).map(([w, h]) => ({ kind: 'scr' as const, q: scramble(w, r), a: w, show: hint ? h : '' }))
+    const cl = (n: number, hint: boolean) => pickVerses(bible!, null, r, n * 3).map(v => clozeQ(v, r, hint)).filter(Boolean).slice(0, n) as GQ[]
+    const bk = (n: number) => pickVerses(bible!, null, r, n).map(v => bookQ(v, bible!, r))
+    return L === 1 ? sc(1, 6, 5, true) : L === 2 ? sc(7, 8, 5, true) : L === 3 ? [...sc(8, 12, 3, false), ...cl(2, true)] : L === 4 ? cl(5, true) : [...cl(3, false), ...bk(2)] }
+  const exit = () => setMode(null)
+  if (mode?.k === 'wb' && bible) return <WordBuilder bible={bible} onDone={p => award('wb', p)} onExit={exit} />
+  if (mode?.k === 'vb' && bible) return <VerseBuilder bible={bible} onDone={p => award('vb', p)} onExit={exit} />
+  if (mode?.k === 'ws' && theme) return <WordSearch theme={theme} onDone={p => award('ws', p)} onExit={exit} />
+  if (mode?.qs) return <Play key={mode.title} qs={mode.qs} title={mode.title} onFinish={sc => mode.L ? finishLevel(mode.L, sc) : finishDaily(sc)} onExit={exit} />
+  const names = ['Beginner', 'Reader', 'Scholar', 'Teacher', 'Master']; const infos = ['Short words, with hints', 'Longer words, with hints', 'Hard words and fill-in verses', 'Fill in the missing verse word', 'No hints: verses and books']
+  const total = theme ? 9 : 0
+  return <div className="space-y-4"><h2 className="font-bold sd-gold">Games</h2><div className="flex gap-4 text-sm"><span>🔥 Streak {gp.streak}</span><span>⭐ {gp.score} points</span><span>🏅 Level {gp.level}</span></div>
     {theme ? <div className={card + ' space-y-2'}><p className="text-xs uppercase opacity-60">Today's challenge · {day}</p><h3 className="text-lg font-bold">{theme.emoji} {theme.name}</h3><p className="text-sm opacity-80">{theme.intro}</p>
-      <button className="sd-btn" onClick={() => setMode({ qs: buildQs(theme, rng(dayNum(day))), title: theme.name })}>{best !== undefined ? `Play again (best ${best}/${theme.words.length + theme.quiz.length})` : "Start today's challenge"}</button></div> : <p className="text-sm">Loading today's challenge…</p>}
+      <button className="sd-btn" disabled={!bible} onClick={() => bible && setMode({ qs: buildDaily(theme, bible, day), title: theme.name })}>{!bible ? 'Loading the Bible…' : best !== undefined ? `Play again (best ${best}/${total})` : "Start today's challenge"}</button></div> : <p className="text-sm">Loading today's challenge…</p>}
+    <h3 className="font-semibold">More games</h3>
+    {[['wb', '🔤', 'Word Builder', 'Make words from 7 letters, Scrabble style'], ['vb', '🧩', 'Verse Builder', 'Tap the words in the right order'], ['ws', '🔎', 'Word Search', "Find today's hidden Bible words"]].map(([k, e, n, d]) => <button key={k} disabled={!bible || !theme} className={card + ' flex w-full text-left gap-3 items-center'} onClick={() => setMode({ k })}><span className="text-3xl">{e}</span><span><b className="sd-gold">{n}</b><span className="block text-xs opacity-70">{d}</span></span></button>)}
     <h3 className="font-semibold">Levels</h3>
-    {names.map((n, k) => { const L = k + 1; const open = L <= gp.level; return <button key={L} disabled={!open || !themes.length} className={card + ' block w-full text-left' + (open ? '' : ' opacity-50')} onClick={() => setMode({ L, qs: levelQs(L), title: 'Level ' + L })}><b className="sd-gold">{open ? '' : '🔒 '}Level {L} · {n}</b><span className="block text-xs opacity-70">{L === 1 ? 'Short words' : L === 5 ? 'Long words' : `${L + 4}-letter words`} · get 4 of 5 right to unlock the next</span></button> })}
-    <p className="text-xs opacity-60 text-center">A new themed challenge appears every day.</p></div>
+    {names.map((n, k) => { const L = k + 1; const open = L <= gp.level; return <button key={L} disabled={!open || !themes.length || (L > 2 && !bible)} className={card + ' block w-full text-left' + (open ? '' : ' opacity-50')} onClick={() => setMode({ L, qs: levelQs(L), title: 'Level ' + L })}><b className="sd-gold">{open ? '' : '🔒 '}Level {L} · {n}</b><span className="block text-xs opacity-70">{infos[k]} · get 4 of 5 right to unlock the next</span></button> })}
+    <p className="text-xs opacity-60 text-center">New questions come from the Bible every day.</p></div>
 }
 
 const TOPICS: [string, string[], string[]][] = [['Fear', ['fear', 'afraid', 'scared', 'frighten', 'terrif'], ['Isaiah 41:10', 'Psalm 23:4', '2 Timothy 1:7', 'Joshua 1:9', 'Psalm 56:3']], ['Anxiety', ['anxi', 'worry', 'worri', 'stress', 'overwhelm', 'panic'], ['Philippians 4:6-7', '1 Peter 5:7', 'Matthew 6:34', 'Psalm 94:19']], ['Forgiveness', ['forgiv', 'guilt', 'repent', 'shame'], ['1 John 1:9', 'Ephesians 4:32', 'Colossians 3:13', 'Psalm 103:12']], ['Prayer', ['pray'], ['Matthew 6:9-13', 'Philippians 4:6', 'James 5:16', '1 Thessalonians 5:17']], ['Love', ['love'], ['1 Corinthians 13:4-7', 'John 3:16', '1 John 4:7-8', 'Romans 8:38-39']], ['Hope', ['hope', 'future', 'despair'], ['Romans 15:13', 'Jeremiah 29:11', 'Lamentations 3:22-23', 'Psalm 42:11']], ['Faith', ['faith', 'believe', 'doubt', 'trust'], ['Hebrews 11:1', 'Romans 10:17', '2 Corinthians 5:7', 'Mark 9:23']], ['Strength', ['strength', 'strong', 'weak', 'tired', 'weary', 'exhaust'], ['Philippians 4:13', 'Isaiah 40:31', 'Psalm 46:1', 'Nehemiah 8:10']], ['Peace', ['peace', 'calm', 'restless'], ['John 14:27', 'Isaiah 26:3', 'Philippians 4:7', 'Psalm 29:11']], ['Grief', ['grief', 'grieve', 'mourn', 'death', 'died', 'loss', 'sad', 'comfort'], ['Psalm 34:18', 'Matthew 5:4', 'Revelation 21:4', '2 Corinthians 1:3-4']], ['Guidance', ['guid', 'direction', 'decision', 'decide', 'purpose'], ['Proverbs 3:5-6', 'Psalm 119:105', 'Psalm 32:8', 'Isaiah 30:21']], ['Joy', ['joy', 'happy', 'glad', 'rejoice'], ['Philippians 4:4', 'Psalm 16:11', 'John 15:11', 'Nehemiah 8:10']], ['Thanks', ['thank', 'grateful', 'gratitude'], ['1 Thessalonians 5:18', 'Psalm 107:1', 'Colossians 3:17', 'Psalm 100:4']], ['Salvation', ['saved', 'salvation', 'heaven', 'eternal'], ['John 3:16', 'Romans 10:9', 'Ephesians 2:8-9', 'Acts 4:12']], ['Temptation', ['tempt', 'addict', 'lust'], ['1 Corinthians 10:13', 'James 4:7', 'Matthew 26:41', 'Hebrews 4:15-16']], ['Wisdom', ['wisdom', 'wise', 'understanding'], ['James 1:5', 'Proverbs 9:10', 'Proverbs 2:6', 'Proverbs 4:7']], ['Patience', ['patien', 'wait', 'delay'], ['Romans 12:12', 'Psalm 27:14', 'James 5:7-8', 'Galatians 6:9']], ['Courage', ['courage', 'brave', 'bold'], ['Deuteronomy 31:6', 'Psalm 27:1', 'Isaiah 43:1-2', 'Joshua 1:9']], ['Healing', ['heal', 'sick', 'disease'], ['Psalm 147:3', 'Jeremiah 30:17', 'James 5:14-15', 'Isaiah 53:5']], ['Provision', ['provision', 'provide', 'money', 'financ', 'poverty'], ['Philippians 4:19', 'Matthew 6:33', 'Psalm 37:25', 'Psalm 23:1']], ['Loneliness', ['lonel', 'alone', 'abandon', 'forsaken'], ['Deuteronomy 31:8', 'Psalm 68:6', 'Matthew 28:20', 'Hebrews 13:5']], ['Anger', ['anger', 'angry', 'furious', 'rage', 'temper'], ['Ephesians 4:26-27', 'James 1:19-20', 'Proverbs 15:1', 'Psalm 37:8']]]
@@ -498,7 +587,7 @@ export default function App() {
     {(tab === 'books' || tab === 'devotions') && <Books settings={settings} />}
     {tab === 'plans' && <Plans settings={settings} />}
     {tab === 'saved' && <Saved />}
-    {tab === 'games' && <Games />}
+    {tab === 'games' && <Games settings={settings} opts={opts} />}
     {tab === 'ask' && <Ask settings={settings} theme={theme} opts={opts} />}
     {tab === 'admin' && <Admin />}
     {tab === 'settings' && <SettingsPage name={name} setName={setName} settings={settings} setSettings={setSettings} opts={opts} restore={restore} theme={theme} />}
