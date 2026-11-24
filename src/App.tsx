@@ -590,17 +590,22 @@ const VOTD = ['John 3:16', 'Psalm 23:1', 'Philippians 4:13', 'Romans 8:28', 'Pro
 const notif = () => { try { const c = (window as any).Capacitor; return c?.isNativePlatform?.() ? c.Plugins?.LocalNotifications || null : null } catch { return null } }
 const verseFor = (b: Bible, day: number): Hit | null => { const order = shuf(VOTD, rng(Math.floor(day / VOTD.length) + 11)); for (let k = 0; k < order.length; k++) { const h = parseRef(b, order[(day + k) % order.length])[0]; if (h) return h } return null }
 const vnumOf = (h: Hit) => Number((h.ref.match(/:(\d+)/) || [])[1]) || 0
-const verseImage = (h: Hit, refText: string): Promise<Blob | null> => new Promise(res => {
+const famFor = (t: string) => /[\u0B80-\u0BFF]/.test(t) ? "'Noto Sans Tamil','Nirmala UI','Latha','Tamil Sangam MN',sans-serif" : /[\u0D80-\u0DFF]/.test(t) ? "'Noto Sans Sinhala','Nirmala UI','Iskoola Pota','Sinhala Sangam MN',sans-serif" : ''
+const verseImage = async (h: Hit, refText: string): Promise<Blob | null> => {
+  try { await (document as any).fonts?.ready } catch { /* ignore */ }
   const c = document.createElement('canvas'); c.width = 1080; c.height = 1920; const x = c.getContext('2d')!
   const g = x.createLinearGradient(0, 0, 0, 1920); g.addColorStop(0, '#2a1f05'); g.addColorStop(1, '#0b0b0f'); x.fillStyle = g; x.fillRect(0, 0, 1080, 1920)
-  x.strokeStyle = '#d4a017'; x.lineWidth = 6; x.strokeRect(60, 60, 960, 1800); x.textAlign = 'center'
-  x.fillStyle = '#d4a017'; x.font = '600 44px sans-serif'; x.fillText('✦  VERSE OF THE DAY  ✦', 540, 620)
-  x.fillStyle = '#fdf3d0'; x.font = 'italic 60px Georgia, serif'; const lines: string[] = []; let cur = ''
-  for (const w of h.text.split(/\s+/)) { const t = cur ? cur + ' ' + w : w; if (x.measureText(t).width > 820 && cur) { lines.push(cur); cur = w } else cur = t } lines.push(cur)
-  let y = 760; for (const l of lines) { x.fillText(l, 540, y); y += 84 }
-  x.fillStyle = '#d4a017'; x.font = '700 54px sans-serif'; x.fillText(refText, 540, y + 70)
+  x.strokeStyle = '#d4a017'; x.lineWidth = 6; x.strokeRect(60, 60, 960, 1800); x.textAlign = 'center'; x.textBaseline = 'alphabetic'
+  x.fillStyle = '#d4a017'; x.font = '600 44px sans-serif'; x.fillText('✦  VERSE OF THE DAY  ✦', 540, 600)
+  const fam = famFor(h.text) || 'Georgia, serif'; const style = famFor(h.text) ? '' : 'italic '; const maxW = 820, top = 680, bottom = 1500; const nonLatin = !!famFor(h.text)
+  const wrap = (t: string) => { const out: string[] = []; let cur = ''; for (const w of t.split(/\s+/)) { const n = cur ? cur + ' ' + w : w; if (x.measureText(n).width > maxW && cur) { out.push(cur); cur = w } else cur = n } out.push(cur); return out }
+  let size = nonLatin ? 52 : 60; let lines: string[] = []; let lh = 0
+  for (; size >= 30; size -= 2) { x.font = `${style}${size}px ${fam}`; lines = wrap(h.text); lh = Math.round(size * (nonLatin ? 1.7 : 1.4)); if (Math.max(...lines.map(l => x.measureText(l).width)) <= maxW + 1 && lines.length * lh <= bottom - top) break }
+  x.fillStyle = '#fdf3d0'; let y = top + ((bottom - top) - lines.length * lh) / 2 + lh * 0.75; for (const l of lines) { x.fillText(l, 540, y); y += lh }
+  x.fillStyle = '#d4a017'; const rf = famFor(refText) || 'sans-serif'; let rs = 54; for (; rs >= 28; rs -= 2) { x.font = `700 ${rs}px ${rf}`; if (x.measureText(refText).width <= 880) break }
+  x.fillText(refText, 540, Math.min(y + 40, 1640))
   x.globalAlpha = 0.6; x.fillStyle = '#fdf3d0'; x.font = '34px sans-serif'; x.fillText('Salem Daily', 540, 1790)
-  c.toBlob(b => res(b), 'image/png') })
+  return new Promise(res => c.toBlob(b => res(b), 'image/png')) }
 
 function VerseOfDay({ settings }: any) {
   useBN()
