@@ -1,0 +1,73 @@
+name: Build iOS IPA (unsigned)
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  ipa:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+
+      - name: Create iOS project folder (reuses the Android app settings)
+        run: |
+          mkdir ios-app
+          cp android-app/capacitor.config.json android-app/.npmrc ios-app/
+          cp -R android-app/www ios-app/www
+          node -e "
+            const fs = require('fs');
+            const p = JSON.parse(fs.readFileSync('android-app/package.json', 'utf8'));
+            p.name = 'salem-daily-ios';
+            p.dependencies['@capacitor/ios'] = p.dependencies['@capacitor/android'];
+            delete p.dependencies['@capacitor/android'];
+            fs.writeFileSync('ios-app/package.json', JSON.stringify(p, null, 2));
+          "
+
+      - name: Add the iOS platform
+        working-directory: ios-app
+        run: |
+          npm install
+          npx cap add ios
+
+      - name: App icon (1024x1024, no transparency)
+        run: |
+          pip install pillow
+          python - <<'PY'
+          import glob, json, os
+          from PIL import Image
+          src = Image.open('public/icons/icon.png').convert('RGB').resize((1024, 1024), Image.LANCZOS)
+          d = glob.glob('ios-app/ios/App/App/Assets.xcassets/AppIcon.appiconset')[0]
+          names = {i['filename'] for i in json.load(open(os.path.join(d, 'Contents.json')))['images'] if 'filename' in i}
+          for n in names or {'AppIcon-512@2x.png'}:
+              src.save(os.path.join(d, n))
+          print('icon written:', names)
+          PY
+
+      - name: Build the app (no signing)
+        working-directory: ios-app/ios/App
+        run: |
+          xcodebuild \
+            -workspace App.xcworkspace \
+            -scheme App \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Package the IPA
+        run: |
+          mkdir Payload
+          cp -R ios-app/ios/App/build/Build/Products/Release-iphoneos/App.app Payload/
+          zip -qry SalemDaily-unsigned.ipa Payload
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ipa-${{ github.run_number }}
+          name: Salem Daily iOS ${{ github.run_number }} (unsigned)
+          files: SalemDaily-unsigned.ipa
