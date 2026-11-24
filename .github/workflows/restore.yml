@@ -1,0 +1,29 @@
+name: Restore to an earlier version
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: '8887749b0a2664a0383429688a9ca54b42336120'
+        required: true
+permissions:
+  contents: write
+  actions: write
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Restore files
+        run: |
+          git config user.name "restore-bot"
+          git config user.email "restore-bot@users.noreply.github.com"
+          git rm -rf --quiet .
+          git checkout ${{ inputs.sha }} -- .
+          git checkout HEAD -- .github
+          git commit -m "Restore files to ${{ inputs.sha }}" || echo "Nothing to restore"
+          git push
+      - name: Publish the site again
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run "Build and deploy"
