@@ -77,3 +77,9 @@ header nav{display:grid!important;grid-template-columns:repeat(6,minmax(0,1fr));
 .verse-card::before{content:'\201C';position:absolute;top:-20px;right:14px;font-size:7rem;font-family:Georgia,serif;color:rgba(212,160,23,.25);line-height:1;pointer-events:none}
 .verse-text{font-family:Georgia,'Times New Roman',serif;font-size:1.2rem;line-height:1.55;margin:.6rem 0}
 html[data-theme=light] .verse-card{background:linear-gradient(135deg,#fff3cf,#fff)}
+a,button,input,select,textarea,.tab,.sd-chip,.opt,.sd-btn,.game-tile{-webkit-tap-highlight-color:transparent;-webkit-touch-callout:none}
+header nav{-webkit-user-select:none;user-select:none;isolation:isolate;-webkit-transform:translateZ(0);transform:translateZ(0)}
+.tab{transition:background-color .2s,color .2s!important;-webkit-tap-highlight-color:transparent}
+.tab:active{transform:none!important}
+.tab.active{animation:none!important;box-shadow:none!important}
+.tab.active svg{transform:none!important}

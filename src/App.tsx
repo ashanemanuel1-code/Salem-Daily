@@ -595,16 +595,17 @@ const verseImage = async (h: Hit, refText: string): Promise<Blob | null> => {
   try { await (document as any).fonts?.ready } catch { /* ignore */ }
   const c = document.createElement('canvas'); c.width = 1080; c.height = 1920; const x = c.getContext('2d')!
   const g = x.createLinearGradient(0, 0, 0, 1920); g.addColorStop(0, '#2a1f05'); g.addColorStop(1, '#0b0b0f'); x.fillStyle = g; x.fillRect(0, 0, 1080, 1920)
-  x.strokeStyle = '#d4a017'; x.lineWidth = 6; x.strokeRect(60, 60, 960, 1800); x.textAlign = 'center'; x.textBaseline = 'alphabetic'
-  x.fillStyle = '#d4a017'; x.font = '600 44px sans-serif'; x.fillText('✦  VERSE OF THE DAY  ✦', 540, 600)
+  x.strokeStyle = '#d4a017'; x.lineWidth = 6; x.strokeRect(60, 60, 960, 1800); x.textAlign = 'left'; x.textBaseline = 'alphabetic'
+  const ct = (t: string, yy: number) => x.fillText(t, 540 - x.measureText(t).width / 2, yy)
+  x.fillStyle = '#d4a017'; x.font = '600 44px sans-serif'; ct('✦  VERSE OF THE DAY  ✦', 600)
   const fam = famFor(h.text) || 'Georgia, serif'; const style = famFor(h.text) ? '' : 'italic '; const maxW = 820, top = 680, bottom = 1500; const nonLatin = !!famFor(h.text)
   const wrap = (t: string) => { const out: string[] = []; let cur = ''; for (const w of t.split(/\s+/)) { const n = cur ? cur + ' ' + w : w; if (x.measureText(n).width > maxW && cur) { out.push(cur); cur = w } else cur = n } out.push(cur); return out }
   let size = nonLatin ? 52 : 60; let lines: string[] = []; let lh = 0
   for (; size >= 30; size -= 2) { x.font = `${style}${size}px ${fam}`; lines = wrap(h.text); lh = Math.round(size * (nonLatin ? 1.7 : 1.4)); if (Math.max(...lines.map(l => x.measureText(l).width)) <= maxW + 1 && lines.length * lh <= bottom - top) break }
-  x.fillStyle = '#fdf3d0'; let y = top + ((bottom - top) - lines.length * lh) / 2 + lh * 0.75; for (const l of lines) { x.fillText(l, 540, y); y += lh }
+  x.fillStyle = '#fdf3d0'; let y = top + ((bottom - top) - lines.length * lh) / 2 + lh * 0.75; for (const l of lines) { ct(l, y); y += lh }
   x.fillStyle = '#d4a017'; const rf = famFor(refText) || 'sans-serif'; let rs = 54; for (; rs >= 28; rs -= 2) { x.font = `700 ${rs}px ${rf}`; if (x.measureText(refText).width <= 880) break }
-  x.fillText(refText, 540, Math.min(y + 40, 1640))
-  x.globalAlpha = 0.6; x.fillStyle = '#fdf3d0'; x.font = '34px sans-serif'; x.fillText('Salem Daily', 540, 1790)
+  ct(refText, Math.min(y + 40, 1640))
+  x.globalAlpha = 0.6; x.fillStyle = '#fdf3d0'; x.font = '34px sans-serif'; ct('Salem Daily', 1790)
   return new Promise(res => c.toBlob(b => res(b), 'image/png')) }
 
 function VerseOfDay({ settings }: any) {
