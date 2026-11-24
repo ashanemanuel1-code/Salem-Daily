@@ -369,7 +369,7 @@ function Admin() {
 
 const readerStyle = (st: any) => ({ fontSize: st.font, lineHeight: st.spacing, fontFamily: st.serif ? 'Georgia, "Times New Roman", serif' : undefined })
 
-function SettingsPage({ name, setName, settings, setSettings, opts, restore, theme, remind, setRemind }: any) {
+function SettingsPage({ name, setName, settings, setSettings, opts, restore, theme, remind, setRemind, cm, setCm, fbOK }: any) {
   const [rate, setRate] = useLS<number>('ttsRate', 1); const [gender, setGender] = useLS<string>('ttsGender', 'any')
   const up = (p: object) => setSettings({ ...settings, ...p })
   const row = 'flex items-center justify-between gap-3 py-1'
@@ -394,6 +394,12 @@ function SettingsPage({ name, setName, settings, setSettings, opts, restore, the
       <label className={row}>Serif font<input type="checkbox" checked={settings.serif} onChange={e => up({ serif: e.target.checked })} /></label>
       <label className={row}>Show verse numbers<input type="checkbox" checked={settings.vnums} onChange={e => up({ vnums: e.target.checked })} /></label>
       <p className="rounded-lg p-3 border border-white/10" style={readerStyle(settings)}>{settings.vnums && <sup className="mr-1">1</sup>}The LORD is my shepherd; I shall not want.</p><p className="text-xs opacity-60">Voice: {nativeTTS() ? 'phone voice (app)' : canSpeak ? 'browser voice' : 'not available on this device'}</p></div>
+    {fbOK && <div className="sd-card space-y-3"><h3 className="sd-gold font-semibold">Leaderboard and privacy</h3>
+      <label className={row}>Count me as a user<input type="checkbox" checked={!!cm.count} onChange={e => setCm({ ...cm, decided: true, id: cm.id || newId(), first: cm.first || todayStr(), count: e.target.checked })} /></label>
+      <label className={row}>Show me on the leaderboard<input type="checkbox" checked={!!cm.board} disabled={(cm.nick || '').trim().length < 2} onChange={e => { if (!e.target.checked) removeOnline(cm, 'board'); setCm({ ...cm, decided: true, id: cm.id || newId(), board: e.target.checked }) }} /></label>
+      <label className={row}>Nickname<input className="rounded-lg px-2 py-1 w-40" maxLength={20} value={cm.nick || ''} onChange={e => setCm({ ...cm, decided: true, id: cm.id || newId(), nick: e.target.value })} /></label>
+      <p className="text-xs opacity-60">We never collect your email, phone number or location. Only what is switched on above is shared.</p>
+      <button className="sd-chip" onClick={async () => { await removeOnline(cm, 'all'); setCm({ ...cm, count: false, board: false }); alert('Your online data was deleted.') }}>Delete my online data</button></div>}
     {theme?.contact?.whatsapp && <div className="sd-card space-y-2"><h3 className="sd-gold font-semibold">Community</h3><p className="text-xs opacity-70">Optional. This opens WhatsApp so you can say hello to the church team. It shares your WhatsApp number with them.</p><a className="sd-btn inline-block" href={`https://wa.me/${theme.contact.whatsapp}?text=${encodeURIComponent(`Hello, I am ${name}. I am using Salem Daily.`)}`}>👋 Say hello to the church team</a></div>}
     <div className="sd-card space-y-2"><h3 className="sd-gold font-semibold">My data</h3><p className="text-xs opacity-70">Everything is saved only on this device.</p>
       <button className="sd-btn" onClick={() => { localStorage.setItem('sd:lastBackup', JSON.stringify(Date.now())); save('salem-daily-backup.json', Object.fromEntries(Object.keys(localStorage).filter(k => k.startsWith('sd:')).map(k => [k, localStorage.getItem(k)]))) }}>Download my data</button>
@@ -491,10 +497,12 @@ function WordSearch({ theme, onDone, onExit }: { theme: GTheme; onDone: (p: numb
     {found.length === g.placed.length && <><Confetti /><p className="sd-gold font-bold popin">🎉 All words found!</p></>}</div>
 }
 
-function Games({ settings, opts }: any) {
+function Games({ settings, opts, onJoin }: any) {
   const [themes, setThemes] = useState<GTheme[]>([]); const [gp, setGp] = useLS<any>('games', { streak: 0, last: '', done: {}, score: 0, level: 1 }); const [mode, setMode] = useState<any>(null)
   const en = opts.find((o: any) => /english/i.test(o.language || ''))?.id || settings.translation; const bible = useBible(en)
   useEffect(() => { get<GTheme[]>('games.json').then(arr(setThemes)).catch(() => {}) }, [])
+  const [fbOK, setFbOK] = useState(false); useEffect(() => { fbLoad().then(c => setFbOK(!!c)) }, [])
+  useEffect(() => () => { syncCommunity(ls('community', null), ls('games', { score: 0, level: 1, streak: 0 })) }, [])
   const day = todayStr(); const theme = themes.length ? themes[dayNum(day) % themes.length] : null; const best = gp.done?.[day]
   const award = (key: string, pts: number) => { if (gp.paid?.[key + day]) return; setGp({ ...gp, score: gp.score + pts, paid: { ...gp.paid, [key + day]: 1 } }) }
   const finishDaily = (sc: number) => { const streak = gp.last === day ? gp.streak : gp.last === todayStr(-1) ? gp.streak + 1 : 1; setGp({ ...gp, streak, last: day, done: { ...gp.done, [day]: Math.max(sc, best || 0) }, score: gp.score + (best === undefined ? sc * 10 : 0) }) }
@@ -505,6 +513,7 @@ function Games({ settings, opts }: any) {
     const bk = (n: number) => pickVerses(bible!, null, r, n).map(v => bookQ(v, bible!, r))
     return L === 1 ? sc(1, 6, 5, true) : L === 2 ? sc(7, 8, 5, true) : L === 3 ? [...sc(8, 12, 3, false), ...cl(2, true)] : L === 4 ? cl(5, true) : [...cl(3, false), ...bk(2)] }
   const exit = () => setMode(null)
+  if (mode?.k === 'board') return <Board onExit={exit} onJoin={onJoin} />
   if (mode?.k === 'wb' && bible) return <WordBuilder bible={bible} onDone={p => award('wb', p)} onExit={exit} />
   if (mode?.k === 'vb' && bible) return <VerseBuilder bible={bible} onDone={p => award('vb', p)} onExit={exit} />
   if (mode?.k === 'ws' && theme) return <WordSearch theme={theme} onDone={p => award('ws', p)} onExit={exit} />
@@ -516,6 +525,7 @@ function Games({ settings, opts }: any) {
       <button className="sd-btn" disabled={!bible} onClick={() => bible && setMode({ qs: buildDaily(theme, bible, day), title: theme.name })}>{!bible ? 'Loading the Bible…' : best !== undefined ? `Play again (best ${best}/${total})` : "Start today's challenge"}</button></div> : <p className="text-sm">Loading today's challenge…</p>}
     <h3 className="font-semibold">More games</h3>
     {[['wb', '🔤', 'Word Builder', 'Make words from 7 letters, Scrabble style'], ['vb', '🧩', 'Verse Builder', 'Tap the words in the right order'], ['ws', '🔎', 'Word Search', "Find today's hidden Bible words"]].map(([k, e, n, d], ix) => <button key={k} style={{ animationDelay: ix * 0.08 + 's' }} disabled={!bible || !theme} className={card + ' game-tile rise flex w-full text-left gap-3 items-center'} onClick={() => setMode({ k })}><span className="tile-ico">{e}</span><span><b className="sd-gold">{n}</b><span className="block text-xs opacity-70">{d}</span></span></button>)}
+    {fbOK && <button className={card + ' game-tile rise flex w-full text-left gap-3 items-center'} onClick={() => setMode({ k: 'board' })}><span className="tile-ico">🏆</span><span><b className="sd-gold">Leaderboard</b><span className="block text-xs opacity-70">See how you rank this week</span></span></button>}
     <h3 className="font-semibold">Levels</h3>
     {names.map((n, k) => { const L = k + 1; const open = L <= gp.level; return <button key={L} disabled={!open || !themes.length || (L > 2 && !bible)} className={card + ' game-tile block w-full text-left' + (open ? '' : ' opacity-50')} onClick={() => setMode({ L, qs: levelQs(L), title: 'Level ' + L })}><b className="sd-gold">{open ? '' : '🔒 '}Level {L} · {n}</b><span className="block text-xs opacity-70">{infos[k]} · get 4 of 5 right to unlock the next</span></button> })}
     <p className="text-xs opacity-60 text-center">New questions come from the Bible every day.</p></div>
@@ -617,6 +627,52 @@ function Reminder({ settings, remind }: any) {
   return null
 }
 
+type FB = { projectId: string; apiKey: string }
+let FBC: FB | null | undefined
+const fbLoad = async (): Promise<FB | null> => { if (FBC !== undefined) return FBC; try { const j = await get<FB>('firebase.json'); FBC = j?.projectId && j?.apiKey ? j : null } catch { FBC = null } return FBC }
+const fbBase = (c: FB) => `https://firestore.googleapis.com/v1/projects/${c.projectId}/databases/(default)/documents`
+const fbSet = async (c: FB, path: string, data: Record<string, string | number>) => { const mask = Object.keys(data).map(k => 'updateMask.fieldPaths=' + k).join('&'); const fields: any = {}; for (const k in data) fields[k] = typeof data[k] === 'number' ? { integerValue: String(Math.round(data[k] as number)) } : { stringValue: data[k] }
+  const r = await fetch(`${fbBase(c)}/${path}?${mask}&key=${c.apiKey}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fields }) }); if (!r.ok) throw new Error('save ' + r.status) }
+const fbDel = (c: FB, path: string) => fetch(`${fbBase(c)}/${path}?key=${c.apiKey}`, { method: 'DELETE' })
+const fbTop = async (c: FB, parent: string) => { const r = await fetch(`${fbBase(c)}${parent ? '/' + parent : ''}:runQuery?key=${c.apiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ structuredQuery: { from: [{ collectionId: 'players' }], orderBy: [{ field: { fieldPath: 'points' }, direction: 'DESCENDING' }], limit: 20 } }) })
+  if (!r.ok) throw new Error('read ' + r.status); const j = await r.json(); return (j as any[]).filter(x => x.document).map(x => { const f = x.document.fields || {}; return { id: String(x.document.name).split('/').pop() || '', name: f.name?.stringValue || '', points: Number(f.points?.integerValue || 0), level: Number(f.level?.integerValue || 1), streak: Number(f.streak?.integerValue || 0) } }) }
+const weekId = () => 'w' + Math.floor((dayNum(todayStr()) + 3) / 7)
+const newId = () => { const t = (crypto.randomUUID?.() || '').replace(/-/g, '') || (Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)); return t.padEnd(20, '0').slice(0, 20) }
+const syncCommunity = async (cm: any, gp: any) => { const c = await fbLoad(); if (!c || !cm?.id || !(cm.count || cm.board)) return; const wk = weekId()
+  try { if (cm.count) await fbSet(c, `installs/${cm.id}`, { first: cm.first || todayStr(), last: todayStr(), lang: (navigator.language || 'en').slice(0, 10), platform: (window as any).Capacitor?.isNativePlatform?.() ? 'app' : 'web' })
+    const nick = (cm.nick || '').trim().slice(0, 20); if (cm.board && nick.length >= 2) { let wb = ls<any>('weekBase', null); if (!wb || wb.wk !== wk) { wb = { wk, base: gp.score || 0 }; localStorage.setItem('sd:weekBase', JSON.stringify(wb)) }
+      const d = { name: nick, points: gp.score || 0, level: gp.level || 1, streak: gp.streak || 0 }; await fbSet(c, `players/${cm.id}`, d); await fbSet(c, `weeks/${wk}/players/${cm.id}`, { ...d, points: Math.max(0, (gp.score || 0) - wb.base) }) } } catch { /* offline or not set up */ } }
+const removeOnline = async (cm: any, what: 'all' | 'board') => { const c = await fbLoad(); if (!c || !cm?.id) return; const old = ls<any>('weekBase', null)?.wk
+  try { await Promise.all([fbDel(c, `players/${cm.id}`), fbDel(c, `weeks/${weekId()}/players/${cm.id}`), old ? fbDel(c, `weeks/${old}/players/${cm.id}`) : Promise.resolve(), what === 'all' ? fbDel(c, `installs/${cm.id}`) : Promise.resolve()]) } catch { /* offline */ } }
+
+function Consent({ cm, name, onSave, onClose }: any) {
+  const [count, setCount] = useState(cm.count ?? true); const [board, setBoard] = useState(cm.board ?? false); const [nick, setNick] = useState(cm.nick || (name || '').split(' ')[0].slice(0, 20))
+  const ok = !board || nick.trim().length >= 2
+  return createPortal(<div className="fixed inset-0 grid place-items-center p-5 overflow-auto" style={{ background: 'rgba(0,0,0,.88)', zIndex: 85 }}><div className="sd-card space-y-3 max-w-sm w-full popin">
+    <div className="text-4xl text-center">🤝</div><h3 className="sd-gold font-bold text-lg text-center">Join the community? (optional)</h3>
+    <p className="text-sm">You can compete with other readers and help us see how many people use Salem Daily. Nothing is shared unless you switch it on. We never collect your email, phone number or location.</p>
+    <label className="flex items-start justify-between gap-3 text-sm"><span><b>Count me as a user</b><span className="block text-xs opacity-70">Shares a random number, your language and the date you last opened the app. No name.</span></span><input type="checkbox" checked={count} onChange={e => setCount(e.target.checked)} /></label>
+    <label className="flex items-start justify-between gap-3 text-sm"><span><b>Show me on the leaderboard</b><span className="block text-xs opacity-70">Shares your nickname, points, level and streak with other players.</span></span><input type="checkbox" checked={board} onChange={e => setBoard(e.target.checked)} /></label>
+    {board && <input className="w-full rounded-lg px-3 py-2" maxLength={20} placeholder="Choose a nickname (use a nickname, not your full name)" value={nick} onChange={e => setNick(e.target.value)} />}
+    <p className="text-xs opacity-60">You can change this or delete your online data any time in Settings.</p>
+    <div className="flex gap-2 justify-center"><button className="sd-chip" onClick={onClose}>Not now</button><button className="sd-btn" disabled={!ok} onClick={() => onSave({ ...cm, decided: true, id: cm.id || newId(), first: cm.first || todayStr(), count, board, nick: nick.trim() })}>Save</button></div></div></div>, document.body)
+}
+
+function Board({ onExit, onJoin }: { onExit: () => void; onJoin: () => void }) {
+  const cm = ls<any>('community', {}); const [tab, setTab] = useState<'week' | 'all'>('week'); const [rows, setRows] = useState<any[] | null>(null); const [err, setErr] = useState(false)
+  const load = async () => { setRows(null); setErr(false); const c = await fbLoad(); if (!c) return setErr(true); try { setRows(await fbTop(c, tab === 'week' ? `weeks/${weekId()}` : '')) } catch { setErr(true) } }
+  useEffect(() => { load() }, [tab])
+  const medal = (i: number) => ['🥇', '🥈', '🥉'][i] || String(i + 1)
+  return <div className="space-y-3"><div className="flex justify-between text-sm"><button className="underline" onClick={onExit}>← Back</button><button className="sd-chip" onClick={load}>↻ Refresh</button></div>
+    <h2 className="font-bold sd-gold text-lg">🏆 Leaderboard</h2>
+    <div className="flex gap-2"><button className={'sd-chip' + (tab === 'week' ? ' on' : '')} onClick={() => setTab('week')}>This week</button><button className={'sd-chip' + (tab === 'all' ? ' on' : '')} onClick={() => setTab('all')}>All time</button></div>
+    {!cm.board && <div className="sd-card space-y-2 text-sm"><p>Join to appear on the board. You choose a nickname, and you can leave any time.</p><button className="sd-btn" onClick={onJoin}>Join the leaderboard</button></div>}
+    {err && <p className="text-sm opacity-70">The leaderboard could not load. Check your internet and try again.</p>}
+    {!err && !rows && <p className="text-sm">Loading…</p>}
+    {rows && !rows.length && <p className="text-sm opacity-70">No one is on the board yet. Play a game and be the first!</p>}
+    {rows?.map((r, i) => <div key={r.id} className={'sd-card flex items-center gap-3 popin' + (r.id === cm.id ? ' ring-2' : '')} style={{ animationDelay: i * 0.04 + 's', ...(r.id === cm.id ? { boxShadow: '0 0 0 2px var(--gold)' } : {}) }}><span className="w-8 text-center text-lg">{medal(i)}</span><span className="flex-1"><b>{r.name}{r.id === cm.id ? ' (you)' : ''}</b><span className="block text-xs opacity-60">Level {r.level} · 🔥 {r.streak}</span></span><b className="sd-gold">{r.points}</b></div>)}</div>
+}
+
 function SelReader({ rate }: { rate: number }) {
   const [t, setT] = useState('')
   useEffect(() => { const f = () => setT((getSelection()?.toString() || '').trim()); document.addEventListener('selectionchange', f); return () => document.removeEventListener('selectionchange', f) }, [])
@@ -637,7 +693,10 @@ function Tour({ onDone }: { onDone: () => void }) {
 
 export default function App() {
   const route = useHash(); const [name, setName] = useLS('name', ''); const [saved, setSettings] = useLS<any>('settings', {}); const settings: any = { translation: 'sample', font: 18, mode: 'dark', accent: '#d4a017', serif: false, spacing: 1.6, vnums: true, motion: true, ...saved }
-  const [verse, setVerse] = useState<{ ref: string; text: string } | null>(null); const [remind, setRemind] = useLS<{ on: boolean; time: string }>('verseRemind', { on: false, time: '07:00' }); const [stale, setStale] = useState(false); const [tour, setTour] = useLS<boolean>('tourDone', false)
+  const [verse, setVerse] = useState<{ ref: string; text: string } | null>(null); const [cm, setCm] = useLS<any>('community', { decided: false }); const [fbOK, setFbOK] = useState(false); const [cmOpen, setCmOpen] = useState(false)
+  useEffect(() => { fbLoad().then(c => setFbOK(!!c)) }, [])
+  useEffect(() => { syncCommunity(cm, ls('games', { score: 0, level: 1, streak: 0 })) }, [cm])
+  const [remind, setRemind] = useLS<{ on: boolean; time: string }>('verseRemind', { on: false, time: '07:00' }); const [stale, setStale] = useState(false); const [tour, setTour] = useLS<boolean>('tourDone', false)
   useEffect(() => { if (!localStorage.getItem('sd:firstUse')) localStorage.setItem('sd:firstUse', JSON.stringify(Date.now()))
     const chk = () => fetch(B + 'version.json', { cache: 'no-store' }).then(r => r.json()).then(j => { if (j?.v && j.v !== __BUILD__) { if (!sessionStorage.getItem('sd-upd')) { sessionStorage.setItem('sd-upd', '1'); repair() } else setStale(true) } }).catch(() => {})
     chk(); const f = () => { if (!document.hidden) chk() }; document.addEventListener('visibilitychange', f); const t = setInterval(chk, 300000); return () => { document.removeEventListener('visibilitychange', f); clearInterval(t) } }, [])
@@ -654,7 +713,7 @@ export default function App() {
   if (!name) return <Welcome onDone={setName} />
   const tab = route.split('/')[0]
   const restore = async (f: File) => { try { const j = JSON.parse(await f.text()); Object.entries(j).forEach(([k, v]) => localStorage.setItem(k, v as string)); location.reload() } catch { alert('Invalid backup') } }
-  return <div className="min-h-screen"><div className="max-w-2xl mx-auto p-4 space-y-4"><SelReader rate={ttsRate} /><Reminder settings={settings} remind={remind} />{!tour && <Tour onDone={() => setTour(true)} />}{stale && <div className="sd-card flex items-center justify-between gap-2"><span className="text-sm">✨ A new version is ready</span><button className="sd-btn" onClick={repair}>Update now</button></div>}
+  return <div className="min-h-screen"><div className="max-w-2xl mx-auto p-4 space-y-4"><SelReader rate={ttsRate} /><Reminder settings={settings} remind={remind} />{!tour && <Tour onDone={() => setTour(true)} />}{fbOK && tour && (!cm.decided || cmOpen) && <Consent cm={cm} name={name} onSave={(v: any) => { setCm(v); setCmOpen(false) }} onClose={() => { if (!cm.decided) setCm({ ...cm, decided: true }); setCmOpen(false) }} />}{stale && <div className="sd-card flex items-center justify-between gap-2"><span className="text-sm">✨ A new version is ready</span><button className="sd-btn" onClick={repair}>Update now</button></div>}
     <header className="flex justify-between items-center"><h1 className="text-xl font-bold sd-gold flex items-center gap-2"><img src={B + 'icons/icon.png'} alt="" className="w-9 h-9 rounded-xl glow" />{theme.appName || 'Salem Daily'}</h1>
       <nav className="flex flex-wrap justify-end gap-x-3 text-sm">{[['', 'Home'], ['bible', 'Bible'], ['books', 'Books'], ['plans', 'Plans'], ['ask', 'Ask'], ['settings', 'Settings']].map(([r, l]) => <a key={r} href={'#/' + r} className={'tab' + (tab === r ? ' active' : '')}><svg viewBox="0 0 24 24" aria-hidden="true"><path d={ICONS[r]} /></svg><span>{l}</span></a>)}</nav></header>
     {tab === 'plans' && opts.length > 1 && <BiblePicker opts={opts} settings={settings} setSettings={setSettings} block />}
@@ -664,10 +723,10 @@ export default function App() {
     {(tab === 'books' || tab === 'devotions') && <Books settings={settings} />}
     {tab === 'plans' && <Plans settings={settings} />}
     {tab === 'saved' && <Saved />}
-    {tab === 'games' && <Games settings={settings} opts={opts} />}
+    {tab === 'games' && <Games settings={settings} opts={opts} onJoin={() => setCmOpen(true)} />}
     {tab === 'ask' && <Ask settings={settings} theme={theme} opts={opts} />}
     {tab === 'admin' && <Admin />}
-    {tab === 'settings' && <SettingsPage name={name} setName={setName} settings={settings} setSettings={setSettings} opts={opts} restore={restore} theme={theme} remind={remind} setRemind={setRemind} />}
+    {tab === 'settings' && <SettingsPage name={name} setName={setName} settings={settings} setSettings={setSettings} opts={opts} restore={restore} theme={theme} remind={remind} setRemind={setRemind} cm={cm} setCm={setCm} fbOK={fbOK} />}
     </div>
   </div></div>
 }
