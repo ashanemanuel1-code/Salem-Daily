@@ -604,16 +604,22 @@ const verseImage = (h: Hit, refText: string): Promise<Blob | null> => new Promis
 
 function VerseOfDay({ settings }: any) {
   useBN()
+  const [pv, setPv] = useState('')
   const bible = useBible(settings.translation); const h = bible ? verseFor(bible, dayNum(todayStr())) : null
   if (!h) return <div className="sd-card verse-card"><p className="text-sm opacity-70">Loading today's verse…</p></div>
   const open = () => { localStorage.setItem('sd:goto', JSON.stringify({ book: h.book, ch: h.ch, v: vnumOf(h) })); location.hash = '#/bible' }
   const share = async () => { const text = `“${h.text}” — ${refL(h, bible?.meta.language)}`; try { if (typeof navigator.share === 'function') await navigator.share({ text }); else { await navigator.clipboard?.writeText(text); alert('Verse copied.') } } catch { /* cancelled */ } }
-  const picture = async () => { const b = await verseImage(h, refL(h, bible?.meta.language)); if (!b) return; const f = new File([b], 'verse-of-the-day.png', { type: 'image/png' }); try { if (navigator.canShare?.({ files: [f] })) { await navigator.share({ files: [f] }); return } } catch { /* fall through */ } const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'verse-of-the-day.png'; a.click() }
+  const picture = async () => { const b = await verseImage(h, refL(h, bible?.meta.language)); if (!b) return
+    const P = (window as any).Capacitor?.isNativePlatform?.() ? (window as any).Capacitor.Plugins : null
+    if (P?.Filesystem && P?.Share) { try { const data = await new Promise<string>((res, rej) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(',')[1]); fr.onerror = rej; fr.readAsDataURL(b) }); const w = await P.Filesystem.writeFile({ path: 'verse-of-the-day.png', data, directory: 'CACHE' }); await P.Share.share({ title: 'Verse of the day', files: [w.uri] }); return } catch { /* fall through */ } }
+    const f = new File([b], 'verse-of-the-day.png', { type: 'image/png' }); try { if (navigator.canShare?.({ files: [f] })) { await navigator.share({ files: [f] }); return } } catch { /* fall through */ }
+    if (P) { setPv(URL.createObjectURL(b)); return }
+    const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'verse-of-the-day.png'; a.click() }
   return <div className="sd-card verse-card rise" role="button" onClick={open}>
     <div className="text-xs tracking-widest uppercase sd-gold">✨ Verse of the day · {new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</div>
     <p className="verse-text">“{h.text}”</p>
     <div className="flex items-center justify-between"><b className="sd-gold">{refL(h, bible?.meta.language)}</b><span className="text-xs opacity-60">Tap to read the chapter ›</span></div>
-    <div className="flex gap-2 mt-3" onClick={e => e.stopPropagation()}><button className="sd-chip" onClick={share}>↗ Share</button><button className="sd-chip" onClick={picture}>🖼 Save as picture</button></div></div>
+    <div className="flex gap-2 mt-3" onClick={e => e.stopPropagation()}><button className="sd-chip" onClick={share}>↗ Share</button><button className="sd-chip" onClick={picture}>🖼 Save as picture</button></div>{pv && createPortal(<div className="fixed inset-0 grid place-items-center p-4" style={{ background: 'rgba(0,0,0,.92)', zIndex: 90 }} onClick={e => { e.stopPropagation(); setPv('') }}><div className="text-center space-y-3 max-w-xs"><img src={pv} alt="Verse of the day" className="rounded-xl max-h-[70vh] mx-auto" /><p className="text-sm">Take a screenshot to keep this picture, then tap anywhere to close.</p></div></div>, document.body)}</div>
 }
 
 function Reminder({ settings, remind }: any) {
